@@ -6,6 +6,7 @@ const fetch = require('node-fetch');
 const { Bot } = require('grammy');
 const { GoogleGenAI } = require('@google/genai');
 const memoryManager = require('./memoryManager');
+const { searchWeb, formatSearchResults } = require('./webSearch');
 
 // Kiểm tra biến môi trường
 if (!process.env.TELEGRAM_BOT_TOKEN) {
@@ -372,7 +373,29 @@ bot.on('message:text', async (ctx) => {
     }
   }
 
-  // 2. Trò chuyện thông thường qua Gemini
+  // 2. Tra cứu Internet thời gian thực nếu câu hỏi cần tìm giá, link mua, tin tức
+  let promptToSend = cleanText;
+  const searchKeywords = [
+    'giá', 'mua ở đâu', 'link mua', 'link', 'so sánh giá', 'bao nhiêu tiền',
+    'ở đâu bán', 'tìm kiếm', 'tra cứu', 'hôm nay', 'tin tức', 'thời tiết',
+    'shopee', 'lazada', 'tiki', 'con cưng', 'bibomart', 'kidsplaza', 'khuyến mãi', 'sale'
+  ];
+  const isSearchNeeded = searchKeywords.some(kw => cleanText.toLowerCase().includes(kw));
+
+  if (isSearchNeeded) {
+    try {
+      console.log(`🌐 [Web Search] Đang tra cứu Internet cho: "${cleanText}"...`);
+      const searchResults = await searchWeb(cleanText);
+      if (searchResults && searchResults.length > 0) {
+        promptToSend = `${cleanText}\n${formatSearchResults(searchResults)}\n(Lưu ý: Hãy trích dẫn đường link mua và mức giá cụ thể từ dữ liệu tìm kiếm Internet ở trên để tư vấn cho Sếp).`;
+        console.log(`🌐 [Web Search] Đã lấy được ${searchResults.length} kết quả thực tế.`);
+      }
+    } catch (e) {
+      console.warn('⚠️ Lỗi tra cứu web:', e.message);
+    }
+  }
+
+  // 3. Trò chuyện thông thường qua Gemini
   let typingInterval = setInterval(() => {
     ctx.replyWithChatAction('typing').catch(() => {});
   }, 4000);
@@ -381,7 +404,7 @@ bot.on('message:text', async (ctx) => {
   try {
     console.log(`🤖 Đang gửi câu hỏi cho Gemini AI...`);
     const chat = getOrCreateChat(userId, userName);
-    const response = await chat.sendMessage({ message: cleanText });
+    const response = await chat.sendMessage({ message: promptToSend });
     clearInterval(typingInterval);
 
     const replyText = response.text || 'Dạ, Tiểu Cường đã ghi nhận ý Sếp!';
