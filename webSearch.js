@@ -1,40 +1,50 @@
 const fetch = require('node-fetch');
 
-// Tìm kiếm thông tin trên Internet qua DuckDuckGo HTML (Miễn phí 100%, không cần API key)
+// Tra cứu thông tin trên Internet qua DuckDuckGo HTML (Miễn phí 100%, không cần API key)
 async function searchWeb(query) {
   try {
     const url = 'https://html.duckduckgo.com/html/?q=' + encodeURIComponent(query);
     const res = await fetch(url, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7'
       },
       timeout: 10000
     });
+
+    if (!res.ok) {
+      console.warn(`⚠️ Tra cứu DuckDuckGo trả về mã HTTP: ${res.status}`);
+      return [];
+    }
+
     const html = await res.text();
-
     const results = [];
-    // Regex lấy URL và nội dung trích dẫn
-    const snippetMatches = html.match(/<a class="result__snippet[^>]*>([\s\S]*?)<\/a>/g) || [];
-    const urlMatches = html.match(/href="\/\/duckduckgo\.com\/l\/\?uddg=([^"&]+)/g) || [];
-    const titleMatches = html.match(/<a class="result__url"[^>]*>([\s\S]*?)<\/a>/g) || [];
+    const blocks = html.split('<div class="result results_links');
 
-    for (let i = 0; i < Math.min(snippetMatches.length, 5); i++) {
-      const cleanSnippet = snippetMatches[i] ? snippetMatches[i].replace(/<[^>]+>/g, '').trim() : '';
-      let cleanUrl = '';
-      if (urlMatches[i]) {
-        const raw = urlMatches[i].replace('href="//duckduckgo.com/l/?uddg=', '');
+    for (let i = 1; i < Math.min(blocks.length, 6); i++) {
+      const b = blocks[i];
+      const urlM = b.match(/href="\/\/duckduckgo\.com\/l\/\?uddg=([^"&]+)/);
+      const titleM = b.match(/<a class="result__snippet"[^>]*>([\s\S]*?)<\/a>/) || b.match(/<a class="result__url"[^>]*>([\s\S]*?)<\/a>/);
+      const snipM = b.match(/<a class="result__snippet"[^>]*>([\s\S]*?)<\/a>/);
+
+      let realUrl = '';
+      if (urlM) {
         try {
-          cleanUrl = decodeURIComponent(raw);
+          realUrl = decodeURIComponent(urlM[1]);
         } catch {
-          cleanUrl = raw;
+          realUrl = urlM[1];
         }
       }
 
-      if (cleanSnippet) {
+      const snippet = snipM ? snipM[1].replace(/<[^>]+>/g, '').trim() : '';
+      const title = titleM ? titleM[1].replace(/<[^>]+>/g, '').trim() : 'Nguồn tham khảo';
+
+      if (realUrl && snippet) {
         results.push({
-          title: titleMatches[i] ? titleMatches[i].replace(/<[^>]+>/g, '').trim() : `Kết quả ${i + 1}`,
-          snippet: cleanSnippet,
-          url: cleanUrl
+          title: title,
+          snippet: snippet,
+          url: realUrl
         });
       }
     }
@@ -49,9 +59,9 @@ async function searchWeb(query) {
 // Format kết quả tìm kiếm để nạp vào prompt cho Gemini
 function formatSearchResults(results) {
   if (!results || results.length === 0) return '';
-  let text = '\n\n=== [DỮ LIỆU TÌM KIẾM TỪ INTERNET THEO THỜI GIAN THỰC] ===\n';
+  let text = '\n\n=== [DỮ LIỆU TÌM KIẾM INTERNET THEO THỜI GIAN THỰC] ===\n';
   results.forEach((r, idx) => {
-    text += `${idx + 1}. ${r.snippet}\nLink tham khảo: ${r.url}\n\n`;
+    text += `${idx + 1}. MÔ TẢ/GIÁ CẢ: ${r.snippet}\n🔗 LINK MUA HÀNG/THAM KHẢO: ${r.url}\n\n`;
   });
   text += '========================================================\n';
   return text;
