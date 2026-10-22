@@ -17,7 +17,7 @@ if (!process.env.GEMINI_API_KEY) {
   process.exit(1);
 }
 
-// 1. Cấu hình Custom DNS Agent để vượt chặn mạng Việt Nam đối với api.telegram.org
+// 1. Cấu hình Custom DNS Agent (Chỉ áp dụng khi chạy trên máy tính cá nhân ở Việt Nam)
 const TELEGRAM_IP = '149.154.166.110';
 const customLookup = (hostname, options, callback) => {
   if (typeof options === 'function') {
@@ -36,8 +36,12 @@ const customLookup = (hostname, options, callback) => {
 const customAgent = new https.Agent({
   lookup: customLookup,
   keepAlive: true,
-  timeout: 30000
+  timeout: 60000
 });
+
+// Kiểm tra môi trường: nếu đang chạy trên Đám mây (Render) thì dùng DNS trực tiếp của Singapore, không ép IP
+const isCloud = process.env.RENDER === 'true' || !!process.env.RENDER;
+console.log(`🌍 Môi trường hoạt động: ${isCloud ? 'ĐÁM MÂY (Render Cloud - Singapore)' : 'MÁY CÁ NHÂN (Local PC - Việt Nam)'}`);
 
 // 2. HTTP Server giữ trạng thái sống cho nền tảng Đám mây (Render, Koyeb, Railway)
 const PORT = process.env.PORT || 3000;
@@ -50,7 +54,7 @@ http.createServer((req, res) => {
 
 // 3. Khởi tạo Gemini AI Client
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-const AI_MODEL = 'gemini-flash-latest';
+const AI_MODEL = 'gemini-flash-lite-latest';
 
 // System Prompt gốc định hình tính cách
 const BASE_SYSTEM_INSTRUCTION = `Bạn là "Osin Tiểu Cường" (@Osin_Tieu_Cuong_Bot) - một trợ lý ảo cực kỳ thông minh, tận tâm, lanh lợi và có chút hài hước, dí dỏm.
@@ -81,38 +85,40 @@ function getOrCreateChat(userId, userName, forceReset = false) {
   return userSessions.get(userId);
 }
 
-// 4. Khởi tạo Telegram Bot
-const bot = new Bot(process.env.TELEGRAM_BOT_TOKEN, {
-  client: {
-    baseFetchConfig: {
-      agent: customAgent
-    }
-  }
-});
+// 4. Khởi tạo Telegram Bot (Tự động thích ứng Cloud / Local)
+const botConfig = isCloud
+  ? {}
+  : { client: { baseFetchConfig: { agent: customAgent } } };
+const bot = new Bot(process.env.TELEGRAM_BOT_TOKEN, botConfig);
 
 // Hàm chia nhỏ tin nhắn nếu dài hơn giới hạn 4096 ký tự của Telegram
 async function sendLongMessage(ctx, text) {
   const MAX_LENGTH = 4000;
+  let chunks = [];
   if (!text || text.length <= MAX_LENGTH) {
-    return await ctx.reply(text, { parse_mode: 'Markdown' }).catch(async () => {
-      return await ctx.reply(text);
-    });
+    chunks = [text || ''];
+  } else {
+    let remaining = text;
+    while (remaining.length > 0) {
+      let chunk = remaining.slice(0, MAX_LENGTH);
+      const lastNewline = chunk.lastIndexOf('\n');
+      if (lastNewline > 2000 && remaining.length > MAX_LENGTH) {
+        chunk = remaining.slice(0, lastNewline);
+        remaining = remaining.slice(lastNewline + 1);
+      } else {
+        remaining = remaining.slice(MAX_LENGTH);
+      }
+      chunks.push(chunk);
+    }
   }
 
-  let remaining = text;
-  while (remaining.length > 0) {
-    let chunk = remaining.slice(0, MAX_LENGTH);
-    const lastNewline = chunk.lastIndexOf('\n');
-    if (lastNewline > 2000 && remaining.length > MAX_LENGTH) {
-      chunk = remaining.slice(0, lastNewline);
-      remaining = remaining.slice(lastNewline + 1);
-    } else {
-      remaining = remaining.slice(MAX_LENGTH);
-    }
-
-    await ctx.reply(chunk, { parse_mode: 'Markdown' }).catch(async () => {
+  for (const chunk of chunks) {
+    try {
+      await ctx.reply(chunk, { parse_mode: 'Markdown' });
+    } catch (err) {
+      console.warn('⚠️ Lỗi format Markdown, tự động gửi lại bằng text thuần:', err.message);
       await ctx.reply(chunk);
-    });
+    }
   }
 }
 
@@ -255,8 +261,24 @@ bot.on('message:text', async (ctx) => {
   const text = ctx.message.text;
   if (!text || text.startsWith('/')) return;
 
+  const isGroup = ctx.chat.type === 'group' || ctx.chat.type === 'supergroup';
+  const botUsername = ctx.me.username;
+  const isMentioned = text.toLowerCase().includes(`@${botUsername.toLowerCase()}`);
+  const isReplyToBot = ctx.message.reply_to_message?.from?.id === ctx.me.id;
+
+  // Trong nhóm: chỉ trả lời khi được tag @ hoặc bấm reply vào tin nhắn của bot
+  if (isGroup && !isMentioned && !isReplyToBot) {
+    return;
+  }
+
+  // Gọt bỏ tag @Osin_Tieu_Cuong_Bot khỏi câu hỏi để AI nhận prompt sạch
+  const cleanText = text.replace(new RegExp(`@${botUsername}`, 'gi'), '').trim();
+  if (!cleanText) return;
+
   const userId = ctx.from.id;
   const userName = ctx.from.first_name || 'Sếp';
+
+  console.log(`📩 [${new Date().toLocaleTimeString('vi-VN')}] Nhận tin từ ${userName} (${isGroup ? 'Nhóm' : 'Chat riêng'}): "${cleanText}"`);
 
   // 1. Nhận diện tự động nếu người dùng muốn dạy kiến thức
   const teachPatterns = [
@@ -269,12 +291,15 @@ bot.on('message:text', async (ctx) => {
   ];
 
   for (const pattern of teachPatterns) {
-    const match = text.match(pattern);
+    const match = cleanText.match(pattern);
     if (match && match[1]) {
       const knowledge = match[1].trim();
       const added = memoryManager.addMemory(knowledge, 'Kiến thức Sếp dạy');
       getOrCreateChat(userId, userName, true);
-      return await ctx.reply(`🧠 **Dạ, Tiểu Cường đã ghi nhớ vĩnh viễn điều này vào sổ tay rồi ạ!**\n\n📌 **Mục #${added.id}:** "${added.content}"\n\nEm đã khắc sâu vào tiềm thức, kể cả khi tắt máy hay bảo trì em cũng sẽ không bao giờ quên ạ! 🥰`, { parse_mode: 'Markdown' });
+      console.log(`🧠 Đã lưu kiến thức mới #${added.id}: "${added.content}"`);
+      return await ctx.reply(`🧠 **Dạ, Tiểu Cường đã ghi nhớ vĩnh viễn điều này vào sổ tay rồi ạ!**\n\n📌 **Mục #${added.id}:** "${added.content}"\n\nEm đã khắc sâu vào tiềm thức, kể cả khi tắt máy hay bảo trì em cũng sẽ không bao giờ quên ạ! 🥰`, { parse_mode: 'Markdown' }).catch(async () => {
+        await ctx.reply(`🧠 Dạ, Tiểu Cường đã ghi nhớ vĩnh viễn điều này vào sổ tay rồi ạ!\n\nMục #${added.id}: "${added.content}"`);
+      });
     }
   }
 
@@ -285,22 +310,25 @@ bot.on('message:text', async (ctx) => {
   await ctx.replyWithChatAction('typing').catch(() => {});
 
   try {
+    console.log(`🤖 Đang gửi câu hỏi cho Gemini AI...`);
     const chat = getOrCreateChat(userId, userName);
-    const response = await chat.sendMessage({ message: text });
+    const response = await chat.sendMessage({ message: cleanText });
     clearInterval(typingInterval);
 
     const replyText = response.text || 'Dạ, Tiểu Cường đã ghi nhận ý Sếp!';
+    console.log(`✅ Gemini phản hồi thành công (${replyText.length} ký tự). Đang gửi về Telegram...`);
     await sendLongMessage(ctx, replyText);
+    console.log(`📤 Đã gửi tin nhắn cho Sếp thành công!`);
 
   } catch (err) {
     clearInterval(typingInterval);
     console.error('❌ Lỗi xử lý tin nhắn:', err);
 
     if (err.message && (err.message.includes('429') || err.message.includes('quota'))) {
-      await ctx.reply('Dạ Sếp ơi, Google đang tạm nghẽn một chút do nhiều người gọi quá (hạn mức tạm thời). Sếp đợi em khoảng 10-15 giây rồi nhắn lại nhé! 🙇‍♂️');
+      await ctx.reply('Dạ Sếp ơi, Google đang tạm nghẽn một chút do nhiều người gọi quá (hạn mức tạm thời). Sếp đợi em khoảng 10-15 giây rồi nhắn lại nhé! 🙇‍♂️').catch(() => {});
     } else {
       userSessions.delete(userId);
-      await ctx.reply('Dạ Sếp ơi, vừa có chút chập điện trong mạch não AI của em, em đã tự khởi động lại rồi. Sếp nhắn lại câu vừa rồi giúp em nhé! 🙏');
+      await ctx.reply('Dạ Sếp ơi, vừa có chút chập điện trong mạch não AI của em, em đã tự khởi động lại rồi. Sếp nhắn lại câu vừa rồi giúp em nhé! 🙏').catch(() => {});
     }
   }
 });
