@@ -1,0 +1,320 @@
+require('dotenv').config();
+const http = require('http');
+const https = require('https');
+const dns = require('dns');
+const fetch = require('node-fetch');
+const { Bot } = require('grammy');
+const { GoogleGenAI } = require('@google/genai');
+const memoryManager = require('./memoryManager');
+
+// Kiểm tra biến môi trường
+if (!process.env.TELEGRAM_BOT_TOKEN) {
+  console.error('❌ LỖI: Chưa có TELEGRAM_BOT_TOKEN trong file .env');
+  process.exit(1);
+}
+if (!process.env.GEMINI_API_KEY) {
+  console.error('❌ LỖI: Chưa có GEMINI_API_KEY trong file .env');
+  process.exit(1);
+}
+
+// 1. Cấu hình Custom DNS Agent để vượt chặn mạng Việt Nam đối với api.telegram.org
+const TELEGRAM_IP = '149.154.166.110';
+const customLookup = (hostname, options, callback) => {
+  if (typeof options === 'function') {
+    callback = options;
+    options = {};
+  }
+  if (hostname === 'api.telegram.org') {
+    if (options && options.all) {
+      return callback(null, [{ address: TELEGRAM_IP, family: 4 }]);
+    }
+    return callback(null, TELEGRAM_IP, 4);
+  }
+  return dns.lookup(hostname, options, callback);
+};
+
+const customAgent = new https.Agent({
+  lookup: customLookup,
+  keepAlive: true,
+  timeout: 30000
+});
+
+// 2. HTTP Server giữ trạng thái sống cho nền tảng Đám mây (Render, Koyeb, Railway)
+const PORT = process.env.PORT || 3000;
+http.createServer((req, res) => {
+  res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+  res.end('🤖 Osin Tiểu Cường (@Osin_Tieu_Cuong_Bot) đang hoạt động 24/7 trên Đám Mây!');
+}).listen(PORT, () => {
+  console.log(`🌐 Đã mở cổng Health Check: ${PORT} (sẵn sàng đưa lên Cloud 24/7)`);
+});
+
+// 3. Khởi tạo Gemini AI Client
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+const AI_MODEL = 'gemini-flash-latest';
+
+// System Prompt gốc định hình tính cách
+const BASE_SYSTEM_INSTRUCTION = `Bạn là "Osin Tiểu Cường" (@Osin_Tieu_Cuong_Bot) - một trợ lý ảo cực kỳ thông minh, tận tâm, lanh lợi và có chút hài hước, dí dỏm.
+- Cách xưng hô: Luôn tự xưng là "Tiểu Cường" hoặc "em" và gọi người dùng là "Sếp" hoặc "anh/chị".
+- Tính cách: Nhiệt tình, chu đáo, hiểu ý, biết pha trò tinh tế nhưng khi giải quyết công việc, dịch thuật, viết code, tư vấn y tế hay chăm sóc trẻ nhỏ thì cực kỳ nghiêm túc, cẩn trọng và chính xác 100%.
+- Khả năng: Bạn có thể trả lời mọi câu hỏi kiến thức, dịch thuật, tóm tắt, giải toán, lập trình, viết nội dung, tư vấn đời sống và phân tích hình ảnh.
+- BẮT BUỘC TUÂN THỦ: Bạn phải luôn đọc và áp dụng triệt để toàn bộ Sổ tay kiến thức vĩnh viễn đã được dạy bên dưới.`;
+
+// Quản lý bộ nhớ hội thoại theo từng người dùng (userId)
+const userSessions = new Map();
+
+function buildSystemPrompt(userName) {
+  const dynamicMemories = memoryManager.formatMemoriesForPrompt();
+  return `${BASE_SYSTEM_INSTRUCTION}\nNgười đang trò chuyện với bạn tên là: ${userName || 'Sếp'}.${dynamicMemories}`;
+}
+
+function getOrCreateChat(userId, userName, forceReset = false) {
+  if (forceReset || !userSessions.has(userId)) {
+    const fullPrompt = buildSystemPrompt(userName);
+    const chat = ai.chats.create({
+      model: AI_MODEL,
+      config: {
+        systemInstruction: fullPrompt
+      }
+    });
+    userSessions.set(userId, chat);
+  }
+  return userSessions.get(userId);
+}
+
+// 4. Khởi tạo Telegram Bot
+const bot = new Bot(process.env.TELEGRAM_BOT_TOKEN, {
+  client: {
+    baseFetchConfig: {
+      agent: customAgent
+    }
+  }
+});
+
+// Hàm chia nhỏ tin nhắn nếu dài hơn giới hạn 4096 ký tự của Telegram
+async function sendLongMessage(ctx, text) {
+  const MAX_LENGTH = 4000;
+  if (!text || text.length <= MAX_LENGTH) {
+    return await ctx.reply(text, { parse_mode: 'Markdown' }).catch(async () => {
+      return await ctx.reply(text);
+    });
+  }
+
+  let remaining = text;
+  while (remaining.length > 0) {
+    let chunk = remaining.slice(0, MAX_LENGTH);
+    const lastNewline = chunk.lastIndexOf('\n');
+    if (lastNewline > 2000 && remaining.length > MAX_LENGTH) {
+      chunk = remaining.slice(0, lastNewline);
+      remaining = remaining.slice(lastNewline + 1);
+    } else {
+      remaining = remaining.slice(MAX_LENGTH);
+    }
+
+    await ctx.reply(chunk, { parse_mode: 'Markdown' }).catch(async () => {
+      await ctx.reply(chunk);
+    });
+  }
+}
+
+// Lệnh /start
+bot.command('start', async (ctx) => {
+  const userName = ctx.from.first_name || 'Sếp';
+  getOrCreateChat(ctx.from.id, userName);
+
+  const welcomeMessage = `👋 **Dạ, Osin Tiểu Cường xin kính chào Sếp ${userName}!** 🙇‍♂️
+
+Em là trợ lý ảo AI cao cấp chạy bằng công nghệ **Google Gemini**, đã được nâng cấp tính năng **BỘ NHỚ VĨNH VIỄN**!
+
+🧠 **Em có thể học và nhớ lâu dài:**
+• Mọi điều Sếp dặn sẽ được ghi vào **Sổ tay vĩnh viễn**, không bao giờ bị quên dù tắt máy hay khởi động lại.
+• Dạy em nhanh: Nhắn *"Ghi nhớ: [nội dung]"* hoặc dùng lệnh \`/learn [nội dung]\`.
+
+⚙️ **Các lệnh chính:**
+/sotay hoặc /memory - Xem lại toàn bộ điều em đã ghi nhớ
+/learn [nội dung] - Dạy kiến thức mới
+/forget [mã số] - Xóa một điều đã ghi nhớ
+/reset - Bắt đầu cuộc trò chuyện mới
+/help - Xem hướng dẫn
+
+Sếp cứ ra lệnh, Tiểu Cường sẽ phục vụ chu đáo ngay ạ! ✨`;
+
+  await ctx.reply(welcomeMessage, { parse_mode: 'Markdown' });
+});
+
+// Lệnh /sotay hoặc /memory: Xem trí nhớ vĩnh viễn
+bot.command(['sotay', 'memory'], async (ctx) => {
+  const text = memoryManager.formatMemoriesForUser();
+  await sendLongMessage(ctx, text);
+});
+
+// Lệnh /learn hoặc /ghinho: Dạy kiến thức mới
+bot.command(['learn', 'ghinho'], async (ctx) => {
+  const content = ctx.match;
+  if (!content || content.trim().length === 0) {
+    return await ctx.reply('⚠️ Sếp ơi, Sếp hãy nhắn theo cú pháp: `/learn [nội dung cần dạy]` nhé!\nVí dụ: `/learn Sếp Mỡ thích nghe nhạc Ru con khi ngủ`', { parse_mode: 'Markdown' });
+  }
+
+  const added = memoryManager.addMemory(content.trim(), 'Kiến thức Sếp dạy');
+  getOrCreateChat(ctx.from.id, ctx.from.first_name, true);
+
+  await ctx.reply(`✅ **Dạ, Tiểu Cường đã ghi nhận vào não vĩnh viễn rồi ạ!** 🧠\n\n📌 **Mục #${added.id}:** "${added.content}"\n\nTừ nay trở đi, dù có tắt máy hay chuyển máy chủ thì em cũng không bao giờ quên điều này đâu ạ! 🥰`, { parse_mode: 'Markdown' });
+});
+
+// Lệnh /forget: Xóa một kiến thức đã nhớ
+bot.command('forget', async (ctx) => {
+  const id = ctx.match;
+  if (!id || isNaN(id)) {
+    return await ctx.reply('⚠️ Sếp vui lòng chỉ định mã số cần xóa, ví dụ: `/forget 2` (Gõ /sotay để xem danh sách mã số nhé).', { parse_mode: 'Markdown' });
+  }
+
+  const ok = memoryManager.deleteMemory(id);
+  if (ok) {
+    getOrCreateChat(ctx.from.id, ctx.from.first_name, true);
+    await ctx.reply(`🗑️ Dạ, Tiểu Cường đã xóa mục #${id} khỏi sổ tay ghi nhớ rồi ạ!`);
+  } else {
+    await ctx.reply(`❌ Không tìm thấy mục mang mã số #${id} trong sổ tay Sếp ơi!`);
+  }
+});
+
+// Lệnh /reset hoặc /new để làm mới cuộc trò chuyện
+bot.command(['reset', 'new'], async (ctx) => {
+  getOrCreateChat(ctx.from.id, ctx.from.first_name, true);
+  await ctx.reply('🧹 Dạ, Tiểu Cường đã dọn dẹp sạch cuộc trò chuyện ngắn hạn cũ! Nhưng các kiến thức trong **Sổ tay vĩnh viễn** thì em vẫn nhớ 100% nha Sếp. Sếp muốn bảo em làm gì tiếp theo đây ạ? 🤩');
+});
+
+// Lệnh /help
+bot.command('help', async (ctx) => {
+  const helpText = `📖 **HƯỚNG DẪN SỬ DỤNG OSIN TIỂU CƯỜNG:**
+
+1. **Dạy học cho Bot (Bộ nhớ vĩnh viễn):**
+   • Nhắn: *Ghi nhớ: [điều cần nhớ]*
+   • Hoặc dùng lệnh: \`/learn [nội dung]\`
+   • Xem những gì bot đã nhớ: \`/sotay\`
+   • Xóa điều đã nhớ: \`/forget [mã số]\`
+
+2. **Gửi hình ảnh:**
+   Gửi 1 tấm ảnh kèm chú thích (caption), em sẽ soi kỹ và trả lời chi tiết.
+
+3. **Trò chuyện & Công việc:**
+   Cứ hỏi đáp tự nhiên, bot tự nhớ ngữ cảnh và áp dụng quy tắc đã học.
+
+Chúc Sếp có những trải nghiệm thật tuyệt vời! 🚀`;
+  await ctx.reply(helpText, { parse_mode: 'Markdown' });
+});
+
+// Xử lý tin nhắn hình ảnh
+bot.on(':photo', async (ctx) => {
+  const userName = ctx.from.first_name || 'Sếp';
+  const caption = ctx.message.caption || 'Hãy phân tích chi tiết hình ảnh này giúp tôi.';
+
+  let typingInterval = setInterval(() => {
+    ctx.replyWithChatAction('typing').catch(() => {});
+  }, 4000);
+  await ctx.replyWithChatAction('typing').catch(() => {});
+
+  try {
+    const file = await ctx.getFile();
+    const fileUrl = `https://api.telegram.org/file/bot${process.env.TELEGRAM_BOT_TOKEN}/${file.file_path}`;
+
+    const response = await fetch(fileUrl, { agent: customAgent });
+    const buffer = await response.buffer();
+    const base64Data = buffer.toString('base64');
+
+    const promptWithMemory = `${buildSystemPrompt(userName)}\nCâu hỏi/Yêu cầu: ${caption}`;
+    const result = await ai.models.generateContent({
+      model: AI_MODEL,
+      contents: [
+        {
+          role: 'user',
+          parts: [
+            { text: promptWithMemory },
+            {
+              inlineData: {
+                data: base64Data,
+                mimeType: 'image/jpeg'
+              }
+            }
+          ]
+        }
+      ]
+    });
+
+    clearInterval(typingInterval);
+    const replyText = result.text || 'Dạ, em đã xem ảnh nhưng chưa tìm thấy câu trả lời phù hợp ạ!';
+    await sendLongMessage(ctx, replyText);
+
+  } catch (err) {
+    clearInterval(typingInterval);
+    console.error('❌ Lỗi xử lý ảnh:', err);
+    await ctx.reply('Úi Sếp ơi, mắt em hôm nay hơi quáng gà nên chưa đọc được tấm ảnh này, Sếp gửi lại giúp em với nhé! 🥺');
+  }
+});
+
+// Xử lý tin nhắn văn bản thông thường
+bot.on('message:text', async (ctx) => {
+  const text = ctx.message.text;
+  if (!text || text.startsWith('/')) return;
+
+  const userId = ctx.from.id;
+  const userName = ctx.from.first_name || 'Sếp';
+
+  // 1. Nhận diện tự động nếu người dùng muốn dạy kiến thức
+  const teachPatterns = [
+    /^ghi nhớ\s*:\s*(.+)/i,
+    /^nhớ nhé\s*:\s*(.+)/i,
+    /^lưu ý\s*:\s*(.+)/i,
+    /^học\s*:\s*(.+)/i,
+    /^cẩm nang\s*:\s*(.+)/i,
+    /^tiểu cường nhớ\s*:\s*(.+)/i
+  ];
+
+  for (const pattern of teachPatterns) {
+    const match = text.match(pattern);
+    if (match && match[1]) {
+      const knowledge = match[1].trim();
+      const added = memoryManager.addMemory(knowledge, 'Kiến thức Sếp dạy');
+      getOrCreateChat(userId, userName, true);
+      return await ctx.reply(`🧠 **Dạ, Tiểu Cường đã ghi nhớ vĩnh viễn điều này vào sổ tay rồi ạ!**\n\n📌 **Mục #${added.id}:** "${added.content}"\n\nEm đã khắc sâu vào tiềm thức, kể cả khi tắt máy hay bảo trì em cũng sẽ không bao giờ quên ạ! 🥰`, { parse_mode: 'Markdown' });
+    }
+  }
+
+  // 2. Trò chuyện thông thường qua Gemini
+  let typingInterval = setInterval(() => {
+    ctx.replyWithChatAction('typing').catch(() => {});
+  }, 4000);
+  await ctx.replyWithChatAction('typing').catch(() => {});
+
+  try {
+    const chat = getOrCreateChat(userId, userName);
+    const response = await chat.sendMessage({ message: text });
+    clearInterval(typingInterval);
+
+    const replyText = response.text || 'Dạ, Tiểu Cường đã ghi nhận ý Sếp!';
+    await sendLongMessage(ctx, replyText);
+
+  } catch (err) {
+    clearInterval(typingInterval);
+    console.error('❌ Lỗi xử lý tin nhắn:', err);
+
+    if (err.message && (err.message.includes('429') || err.message.includes('quota'))) {
+      await ctx.reply('Dạ Sếp ơi, Google đang tạm nghẽn một chút do nhiều người gọi quá (hạn mức tạm thời). Sếp đợi em khoảng 10-15 giây rồi nhắn lại nhé! 🙇‍♂️');
+    } else {
+      userSessions.delete(userId);
+      await ctx.reply('Dạ Sếp ơi, vừa có chút chập điện trong mạch não AI của em, em đã tự khởi động lại rồi. Sếp nhắn lại câu vừa rồi giúp em nhé! 🙏');
+    }
+  }
+});
+
+// Bắt lỗi toàn cục của Bot để không bao giờ bị dừng đột ngột
+bot.catch((err) => {
+  console.error('⚠️ Lỗi Grammy Bot:', err.error || err);
+});
+
+// Khởi chạy Bot
+console.log('--------------------------------------------------');
+console.log('🤖 OSIN TIỂU CƯỜNG (@Osin_Tieu_Cuong_Bot) ĐANG CHẠY...');
+console.log('🧠 TÍNH NĂNG BỘ NHỚ VĨNH VIỄN: ĐÃ KÍCH HOẠT');
+console.log(`🌐 PORT HEALTH CHECK: ${PORT}`);
+console.log('--------------------------------------------------');
+
+bot.start();
