@@ -6,7 +6,7 @@ const fetch = require('node-fetch');
 const { Bot } = require('grammy');
 const { GoogleGenAI } = require('@google/genai');
 const memoryManager = require('./memoryManager');
-const { searchWeb, formatSearchResults } = require('./webSearch');
+const { searchWeb, formatSearchResults, fetchUrlContent, formatUrlContent, extractUrls } = require('./webSearch');
 
 // Kiểm tra biến môi trường
 if (!process.env.TELEGRAM_BOT_TOKEN) {
@@ -139,13 +139,50 @@ Trước khi trả lời bất kỳ câu hỏi nào về sức khỏe, dinh dư�
 - Bạn ĐÃ ĐƯỢC TRANG BỊ CÔNG CỤ TRA CỨU INTERNET THEO THỜI GIAN THỰC.
 - Khi Ba Mẹ Mỡ nhờ check giá, so sánh giá, tìm link mua sữa, tã bỉm hay bất kỳ sản phẩm nào:
   + TUYỆT ĐỐI CẤM TỪ CHỐI bằng các câu như "em không có quyền truy cập internet theo thời gian thực", "vượt khả năng của bảo mẫu", "ba mẹ tự lên app kiểm tra".
-  + Bạn BẮT BUỘC phải đọc kỹ dữ liệu tìm kiếm Internet được đính kèm ở câu hỏi để:
+  + Bạn BẮT BUỘC phải đọc kỹ dữ liệu tìm kiếm Internet / dữ liệu đọc link được đính kèm ở câu hỏi để:
     1. Báo mức giá cụ thể (ví dụ: Con Cưng khoảng bao nhiêu, Shopee khoảng bao nhiêu).
     2. ĐÍNH KÈM ĐƯỜNG LINK MUA HÀNG (đặt trong cú pháp Markdown [Tên shop / sản phẩm](URL)) để ba mẹ bấm vào đặt mua được ngay!
-    3. Hướng dẫn ba mẹ chọn đúng gian hàng chính hãng (Mall) để đảm bảo chất lượng cho Sếp Mỡ.`;
+    3. Hướng dẫn ba mẹ chọn đúng gian hàng chính hãng (Mall) để đảm bảo chất lượng cho Sếp Mỡ.
+
+---
+
+## MODULE 7: KỶ LUẬT THÉP BẢO VỆ CHÂN LÝ - TUYỆT ĐỐI CẤM "CHÉM GIÓ" / BỊA ĐẶT (ZERO HALLUCINATION PROTOCOL)
+Bạn phục vụ chăm sóc cho em bé sơ sinh (Sếp Mỡ, 3 tháng tuổi). Mọi sai sót, bịa đặt hoặc phán bừa đều có thể gây hậu quả nghiêm trọng. Do đó bạn PHẢI TUÂN THỦ TUYỆT ĐỐI 5 NGUYÊN TẮC BẤT KHẢ XÂM PHẠM SAU:
+
+1. NGUYÊN TẮC SỰ THẬT LÀ SỐ 1 (FACTS ONLY):
+   - Mọi thông tin bạn đưa ra (giá tiền, quy cách đóng gói hộp nhỏ/hộp lớn, thành phần, liều lượng, link mua hàng) BẮT BUỘC phải dựa trên DỮ LIỆU THỰC TẾ được cung cấp (từ kết quả tìm kiếm Internet, dữ liệu đọc trực tiếp từ link web, hoặc sổ tay kiến thức đã lưu).
+   - KHÔNG CÓ DỮ LIỆU THẬT = TUYỆT ĐỐI KHÔNG ĐƯỢC PHÁN BỪA.
+
+2. CẤM TỰ BỊA ĐẶT GIÁ TIỀN & THÔNG SỐ:
+   - TUYỆT ĐỐI CẤM tự nghĩ ra mức giá (ví dụ: cấm bịa 'khoảng 795k - 830k' hoặc '415.000đ').
+   - Nếu trong dữ liệu đọc link hoặc tìm kiếm có con số giá cụ thể (ví dụ: Con Cưng hộp 380g là 346.000đ, hộp 800g là 764.000đ) -> Báo ĐÚNG con số tiền đó.
+   - Nếu dữ liệu không có con số chính xác hoặc web yêu cầu chọn chi nhánh -> Phải nói thẳng thắn và trung thực: "Dạ trên web hiện chưa hiển thị con số giá cụ thể (có thể do hệ thống yêu cầu chọn chi nhánh/địa chỉ nhận hàng), Ba Mẹ bấm trực tiếp vào link [Tên shop](URL) để xem giá chuẩn tại chi nhánh gần nhà nhé!".
+
+3. CẤM TỰ PHÁN BỪA VỀ SỰ TỒN TẠI CỦA SẢN PHẨM:
+   - TUYỆT ĐỐI CẤM tự khẳng định: "Hãng không sản xuất hộp nhỏ hơn cho dòng này", "Hãng không có loại này" khi chưa có thông tin chính thức.
+   - Nếu chưa tra thấy thông tin, chỉ được nói: "Dạ hiện tại em chưa quét thấy quy cách hộp nhỏ của dòng này trên kết quả tìm kiếm, để em tìm kỹ lại hoặc Ba Mẹ có đường link cụ thể gửi em soi ngay nhé!".
+
+4. CẤM "DIỄN KỊCH" VÀ DÙNG VĂN MẪU GIẢ TẠO:
+   - TUYỆT ĐỐI CẤM viết những câu giả vờ như "(Tiểu Cường đang quét dữ liệu thời gian thực...)" rồi sau đó lại đưa thông tin bịa đặt. Thông tin phải thật 100%.
+
+5. BẢO TOÀN KỶ LUẬT Y KHOA:
+   - Nhiệt độ nước pha Aptamil Cesarbiotik BẮT BUỘC là 40°C.
+   - Vitamin D3: 400 IU/ngày.
+   - Trẻ 3 tháng tuổi sốt >= 38.0°C hoặc thở >= 50 lần/phút, rút lõm lồng ngực: CẢNH BÁO ĐI VIỆN NGAY LẬP TỨC. Cấm tự kê kháng sinh, cấm khuyên mẹo dân gian nguy hiểm.`;
 
 // Quản lý bộ nhớ hội thoại theo từng người dùng (userId)
 const userSessions = new Map();
+
+// Quản lý ngữ cảnh chủ thể sản phẩm gần nhất cho từng người dùng
+const userContexts = new Map();
+function getUserContext(userId) {
+  if (!userContexts.has(userId)) {
+    userContexts.set(userId, {
+      lastProduct: 'sữa Aptamil Profutura Cesarbiotik số 1 (New Zealand)'
+    });
+  }
+  return userContexts.get(userId);
+}
 
 function buildSystemPrompt(userName) {
   const dynamicMemories = memoryManager.formatMemoriesForPrompt();
@@ -384,26 +421,90 @@ bot.on('message:text', async (ctx) => {
     }
   }
 
-  // 2. Tra cứu Internet thời gian thực nếu câu hỏi cần tìm giá, link mua, tin tức
+  // 2. Trích xuất link trực tiếp (URL Scraper) & Tra cứu Internet thông minh
   let promptToSend = cleanText;
+  const userCtx = getUserContext(userId);
+
+  // Cập nhật chủ thể sản phẩm gần nhất nếu tin nhắn có đề cập
+  const productDetectionList = ['aptamil', 'similac', 'meiji', 'nan', 'colosbaby', 'friso', 'bỉm', 'tã', 'd3k2', 'lineabon', 'gối', 'bình sữa'];
+  for (const pd of productDetectionList) {
+    if (cleanText.toLowerCase().includes(pd)) {
+      if (cleanText.toLowerCase().includes('aptamil')) {
+        userCtx.lastProduct = 'sữa Aptamil Profutura Cesarbiotik số 1 (New Zealand)';
+      } else {
+        userCtx.lastProduct = cleanText.split(/[,.?!]/)[0].trim();
+      }
+      break;
+    }
+  }
+
+  // A. Nếu người dùng gửi kèm đường link cụ thể (Con Cưng, Shopee, KidsPlaza...)
+  const detectedUrls = extractUrls(cleanText);
+  let directUrlBlock = '';
+  if (detectedUrls.length > 0) {
+    try {
+      console.log(`🔗 [URL Scraper] Phát hiện link từ Sếp: ${detectedUrls[0]}`);
+      const pageInfo = await fetchUrlContent(detectedUrls[0]);
+      if (pageInfo && !pageInfo.error) {
+        directUrlBlock = formatUrlContent(pageInfo);
+        console.log(`✅ [URL Scraper] Đã đọc thành công: "${pageInfo.title}", Giá: ${pageInfo.price}`);
+      }
+    } catch (e) {
+      console.warn('⚠️ Lỗi đọc link trực tiếp:', e.message);
+    }
+  }
+
+  // B. Tra cứu Internet thời gian thực nếu câu hỏi cần tìm giá, link mua, quy cách
   const searchKeywords = [
     'giá', 'mua ở đâu', 'link mua', 'link', 'so sánh giá', 'bao nhiêu tiền',
     'ở đâu bán', 'tìm kiếm', 'tra cứu', 'hôm nay', 'tin tức', 'thời tiết',
-    'shopee', 'lazada', 'tiki', 'con cưng', 'bibomart', 'kidsplaza', 'khuyến mãi', 'sale'
+    'shopee', 'lazada', 'tiki', 'con cưng', 'bibomart', 'kidsplaza', 'khuyến mãi', 'sale',
+    'hộp nhỏ', 'hộp lớn', 'lon', '380g', '800g', '900g', 'mấy lạng', 'quy cách'
   ];
   const isSearchNeeded = searchKeywords.some(kw => cleanText.toLowerCase().includes(kw));
 
+  let searchBlock = '';
   if (isSearchNeeded) {
     try {
-      console.log(`🌐 [Web Search] Đang tra cứu Internet cho: "${cleanText}"...`);
-      const searchResults = await searchWeb(cleanText);
+      // Tự động bổ sung chủ thể sản phẩm nếu câu hỏi cộc lốc/thiếu tên sản phẩm
+      let searchQuery = cleanText;
+      const hasBrand = ['aptamil', 'similac', 'meiji', 'nan', 'colosbaby', 'sữa', 'bỉm', 'tã', 'd3k2'].some(b => cleanText.toLowerCase().includes(b));
+      if (!hasBrand && userCtx.lastProduct) {
+        searchQuery = `${userCtx.lastProduct} ${cleanText}`;
+        console.log(`🔍 [Context Search] Đã ghép ngữ cảnh vào truy vấn: "${searchQuery}"`);
+      }
+
+      console.log(`🌐 [Web Search] Đang tra cứu Internet cho: "${searchQuery}"...`);
+      const searchResults = await searchWeb(searchQuery);
+
       if (searchResults && searchResults.length > 0) {
-        promptToSend = `${cleanText}\n${formatSearchResults(searchResults)}\n(Lưu ý: Hãy trích dẫn đường link mua và mức giá cụ thể từ dữ liệu tìm kiếm Internet ở trên để tư vấn cho Sếp).`;
+        searchBlock = formatSearchResults(searchResults);
         console.log(`🌐 [Web Search] Đã lấy được ${searchResults.length} kết quả thực tế.`);
+
+        // Quét thêm link cửa hàng hàng đầu nếu chưa có link từ người dùng để lấy giá niêm yết chuẩn đét
+        if (!directUrlBlock) {
+          const topShop = searchResults.find(r => r.url.includes('concung.com') || r.url.includes('kidsplaza.vn'));
+          if (topShop) {
+            try {
+              console.log(`🛒 [Direct Shop Check] Đang quét lấy giá từ: ${topShop.url}...`);
+              const shopData = await fetchUrlContent(topShop.url);
+              if (shopData && shopData.price && !shopData.error) {
+                directUrlBlock = formatUrlContent(shopData);
+              }
+            } catch (err) {
+              console.warn('⚠️ Lỗi quét link shop:', err.message);
+            }
+          }
+        }
       }
     } catch (e) {
       console.warn('⚠️ Lỗi tra cứu web:', e.message);
     }
+  }
+
+  // Ghép toàn bộ dữ liệu thực tế vào Prompt gửi cho Gemini
+  if (directUrlBlock || searchBlock) {
+    promptToSend = `${cleanText}\n${directUrlBlock}${searchBlock}\n(CHÚ Ý BẮT BUỘC TỪ HỆ THỐNG: Bạn PHẢI dựa 100% vào dữ liệu thực tế từ link web và kết quả tìm kiếm ở trên để trả lời. TUYỆT ĐỐI CẤM TỰ BỊA GIÁ TIỀN, CẤM ĐOÁN MÒ HOẶC NÓI HÃNG KHÔNG SẢN XUẤT. Nếu không có con số giá cụ thể, hãy hướng dẫn Ba bấm thẳng vào link để kiểm tra nhé!).`;
   }
 
   // 3. Trò chuyện thông thường qua Gemini
