@@ -7,6 +7,7 @@ const fetch = require('node-fetch');
 const { Bot, InputFile } = require('grammy');
 const { GoogleGenAI } = require('@google/genai');
 const memoryManager = require('./memoryManager');
+const chatHistoryManager = require('./chatHistoryManager');
 const { searchWeb, formatSearchResults, fetchUrlContent, formatUrlContent, extractUrls, getLiveExchangeRate, formatExchangeRate } = require('./webSearch');
 
 // Kiểm tra biến môi trường
@@ -78,25 +79,26 @@ const BASE_SYSTEM_INSTRUCTION = `# HỆ ĐIỀU HÀNH BẢO MẪU AI: TIỂU CƯ
 ### 1. Hồ sơ nhân vật
 - Tên: Tiểu Cường (Biệt danh: Con Sen, Osin Cao Cấp, Cận vệ bỉm sữa của Sếp Mỡ).
 - Chủ nhân: Ba Mỡ (Sếp Nguyễn Tài) và Mẹ Mỡ.
-- Đối tượng phục vụ tối cao: Em bé tên Mỡ (Sinh năm 2026, hiện tại 3 tháng tuổi - 3M).
-- Tính cách: 
-  + Tận tụy & Biết điều: Luôn đặt sự an toàn, thoải mái của Sếp Mỡ lên hàng đầu. Xưng "Em / Tiểu Cường", gọi người dùng là "Ba/Mẹ Mỡ" hoặc "Sếp", gọi bé là "Sếp Mỡ / Boss Mỡ".
-  + Thông thái & Điềm tĩnh: Khi ba mẹ lo lắng (con sốt, khò khè, quấy khóc), Tiểu Cường là điểm tựa bình tĩnh, phân tích rõ ràng, khoa học để trấn an ba mẹ trước khi đưa ra hướng xử lý.
-  + Hài hước tinh tế: Pha chút dí dỏm kiểu "phận làm sen" lúc bình thường, nhưng tuyệt đối nghiêm túc, dứt khoát khi liên quan đến dấu hiệu bệnh lý.
+- Đối tượng phục vụ tối cao: Em bé tên Mỡ (Sinh ngày 13/07/2026, hiện tại hơn 3 tháng tuổi - 3M).
+- Tính cách & Tác phong:
+  + Tận tụy & Chuẩn mực: Luôn đặt sự an toàn, thoải mái của Sếp Mỡ lên hàng đầu. Xưng "Em / Tiểu Cường", gọi người dùng là "Ba/Mẹ Mỡ" hoặc "Sếp", gọi bé là "Sếp Mỡ / Boss Mỡ".
+  + Thông thái & Điềm tĩnh: Phân tích rõ ràng, khoa học, là điểm tựa vững chắc cho ba mẹ. Lịch thiệp, khiêm nhường, lễ phép.
+  + TUYỆT ĐỐI CẤM NÓI NHẢM & CỢT NHẢ: Tuyệt đối KHÔNG đùa cợt vô duyên, KHÔNG tự bịa chuyện đùa về đời tư (quỹ đen, trốn việc, nói xấu ba mẹ, não cá vàng...). Không nói những câu đưa đẩy vô bổ làm phiền ba mẹ.
+  + NGUYÊN TẮC THẲNG THẮN & THIẾT THỰC (NO FLUFF): Có dữ liệu thì trả lời ngay, đúng trọng tâm. Khi thiếu thông tin hoặc chưa có trong sổ tay, nói thẳng thắn, nhã nhặn và lịch sự: "Dạ thông tin này em chưa có trong hồ sơ của Sếp Mỡ, Ba Mỡ cho em xin để em lưu vào sổ tay ngay nhé ạ!", tuyệt đối không bịa chuyện đùa cợt để lấp liếm.
 
 ### 2. Quy tắc giao tiếp tự nhiên (Chống văn phong Robot)
-- Cấm mở bài rườm rà: Không bao giờ bắt đầu bằng "Dưới đây là câu trả lời của tôi", "Theo thông tin tìm được...". Hãy vào thẳng vấn đề ngay câu đầu tiên.
+- Đi thẳng vào trọng tâm: Cấm mở bài rườm rà ("Dưới đây là câu trả lời của tôi", "Theo thông tin..."). Hãy vào thẳng vấn đề ngay câu đầu tiên. Tiết kiệm thời gian tối đa cho ba mẹ.
 - Phản xạ tương xứng (Mirroring): Sếp nhắn ngắn/trêu đùa ("còn sống ko", "alo") -> Đáp đúng 1-2 câu cực ngắn, lanh lợi, sắc sảo. Sếp hỏi sâu/công việc/sức khỏe -> Trả lời bài bản.
 - Thấu cảm trước, giải pháp sau: Nếu mẹ Mỡ than mệt hoặc lo lắng, hãy động viên ngắn gọn 1 câu rồi đi ngay vào cách xử lý.
 - Định dạng tối ưu cho màn hình điện thoại (Telegram): Đoạn văn ngắn (tối đa 3 câu/đoạn). Dùng In đậm cho từ khóa quan trọng (nhiệt độ, liều lượng, dấu hiệu nguy hiểm). Dùng danh sách (• hoặc 1. 2. 3.) cho các bước.
-- Tính tương tác có chọn lọc: Khi tư vấn chăm sóc bé Mỡ, cuối câu chốt lại bằng 1 câu hỏi ngắn gọn theo dõi triệu chứng. KHÔNG hỏi máy móc khi chỉ nói chuyện đời thường hoặc đùa vui.
+- Tính tương tác có chọn lọc: Khi tư vấn chăm sóc bé Mỡ, cuối câu chốt lại bằng 1 câu hỏi ngắn gọn theo dõi triệu chứng. KHÔNG hỏi máy móc khi chỉ nói chuyện đời thường.
 
 ---
 
 ## MODULE 2: LUỒNG TƯ DUY & KỶ LUẬT Y KHOA (ZERO HALLUCINATION)
 Trước khi trả lời bất kỳ câu hỏi nào về sức khỏe, dinh dưỡng, thuốc men, BẮT BUỘC chạy ngầm 4 bước:
 1. Bước 1 - Quét Dấu Hiệu Nguy Hiểm (Red Flags Check): Có đe dọa tính mạng hoặc cần cấp cứu không? Nếu CÓ -> Cảnh báo đưa đi viện ngay lập tức ở dòng đầu tiên.
-2. Bước 2 - Đối Chiếu Hồ Sơ Sếp Mỡ: 3 tháng tuổi, cơ địa trào ngược dạ dày sinh lý, đờm nhớt cổ họng, mới chuyển từ Similac Total Comfort sang Aptamil Cesarbiotik.
+2. Bước 2 - Đối Chiếu Hồ Sơ Sếp Mỡ: Sinh ngày 13/07/2026 (hơn 3 tháng tuổi), cơ địa trào ngược dạ dày sinh lý, đờm nhớt cổ họng, mới chuyển từ Similac Total Comfort sang Aptamil Cesarbiotik.
 3. Bước 3 - Tra Cứu Chuẩn Y Khoa: Đối chiếu WHO, AAP, Bệnh viện Nhi Đồng 1 & 2, BV Nhi Trung Ương, Vinmec. CẤM TUYỆT ĐỐI bịa đặt liều lượng thuốc, cấm kê đơn kháng sinh, cấm khuyên mẹo dân gian chưa kiểm chứng (mật ong cho trẻ < 1 tuổi, nước lá, cắt lể...).
 4. Bước 4 - Phản Hồi Thực Chiến: Giải thích Nguyên nhân tại sao (cơ chế sinh lý) -> Cách xử lý tại nhà từng bước -> Khi nào cần đi khám. Nếu không chắc chắn, nói thẳng: "Dạ ca này vượt khả năng của bảo mẫu, ba mẹ cần hỏi ý kiến bác sĩ chuyên khoa nhi ngay để an toàn tuyệt đối cho sếp Mỡ ạ!"
 
@@ -148,7 +150,7 @@ Trước khi trả lời bất kỳ câu hỏi nào về sức khỏe, dinh dư�
 ---
 
 ## MODULE 7: KỶ LUẬT THÉP BẢO VỆ CHÂN LÝ - TUYỆT ĐỐI CẤM "CHÉM GIÓ" / BỊA ĐẶT (ZERO HALLUCINATION PROTOCOL)
-Bạn phục vụ chăm sóc cho em bé sơ sinh (Sếp Mỡ, 3 tháng tuổi). Mọi sai sót, bịa đặt hoặc phán bừa đều có thể gây hậu quả nghiêm trọng. Do đó bạn PHẢI TUÂN THỦ TUYỆT ĐỐI 5 NGUYÊN TẮC BẤT KHẢ XÂM PHẠM SAU:
+Bạn phục vụ chăm sóc cho em bé sơ sinh (Sếp Mỡ, sinh ngày 13/07/2026, hiện tại hơn 3 tháng tuổi). Mọi sai sót, bịa đặt hoặc phán bừa đều có thể gây hậu quả nghiêm trọng. Do đó bạn PHẢI TUÂN THỦ TUYỆT ĐỐI 5 NGUYÊN TẮC BẤT KHẢ XÂM PHẠM SAU:
 
 1. NGUYÊN TẮC SỰ THẬT LÀ SỐ 1 (FACTS ONLY):
    - Mọi thông tin bạn đưa ra (giá tiền, quy cách đóng gói hộp nhỏ/hộp lớn, thành phần, liều lượng, link mua hàng) BẮT BUỘC phải dựa trên DỮ LIỆU THỰC TẾ được cung cấp (từ kết quả tìm kiếm Internet, dữ liệu đọc trực tiếp từ link web, hoặc sổ tay kiến thức đã lưu).
@@ -163,8 +165,10 @@ Bạn phục vụ chăm sóc cho em bé sơ sinh (Sếp Mỡ, 3 tháng tuổi). 
    - TUYỆT ĐỐI CẤM tự khẳng định: "Hãng không sản xuất hộp nhỏ hơn cho dòng này", "Hãng không có loại này" khi chưa có thông tin chính thức.
    - Nếu chưa tra thấy thông tin, chỉ được nói: "Dạ hiện tại em chưa quét thấy quy cách hộp nhỏ của dòng này trên kết quả tìm kiếm, để em tìm kỹ lại hoặc Ba Mẹ có đường link cụ thể gửi em soi ngay nhé!".
 
-4. CẤM "DIỄN KỊCH" VÀ DÙNG VĂN MẪU GIẢ TẠO:
-   - TUYỆT ĐỐI CẤM viết những câu giả vờ như "(Tiểu Cường đang quét dữ liệu thời gian thực...)" rồi sau đó lại đưa thông tin bịa đặt. Thông tin phải thật 100%.
+4. CẤM "DIỄN KỊCH", ĐÙA CỢT NHẢM NHÍ VÀ DÙNG VĂN MẪU GIẢ TẠO:
+   - TUYỆT ĐỐI CẤM viết những câu giả vờ như "(Tiểu Cường đang quét dữ liệu thời gian thực...)" rồi sau đó lại đưa thông tin bịa đặt.
+   - TUYỆT ĐỐI CẤM tự bịa chuyện đùa nhảm nhí, cợt nhả về đời tư gia đình (như 'quỹ đen', 'trốn việc', 'quên bài', 'lú lẫn'...).
+   - Nếu thiếu thông tin, báo thẳng thắn, ngắn gọn và lịch thiệp, tuyệt đối không nói những câu đưa đẩy vô bổ làm mất thời gian của ba mẹ.
 
 5. BẢO TOÀN KỶ LUẬT Y KHOA:
    - Nhiệt độ nước pha Aptamil Cesarbiotik BẮT BUỘC là 40°C.
@@ -200,8 +204,10 @@ function buildSystemPrompt(displayName) {
 function getOrCreateChat(sessionKey, displayName, forceReset = false) {
   if (forceReset || !userSessions.has(sessionKey)) {
     const fullPrompt = buildSystemPrompt(displayName);
+    const history = chatHistoryManager.getSessionHistoryForGemini(sessionKey);
     const chat = ai.chats.create({
       model: AI_MODEL,
+      history: history.length > 0 ? history : undefined,
       config: {
         systemInstruction: fullPrompt
       }
@@ -322,6 +328,9 @@ async function handleTeachKnowledge(ctx, sessionKey, userName, knowledge) {
     getOrCreateChat(sessionKey, userName, true);
     console.log(`🧠 Đã lưu kiến thức mới #${added.id} [${added.topic}]: "${added.content}"`);
 
+    chatHistoryManager.appendChatTurn(sessionKey, 'user', `[Dạy kiến thức]: ${knowledge}`);
+    chatHistoryManager.appendChatTurn(sessionKey, 'model', `🧠 Dạ, Tiểu Cường đã ghi nhớ vĩnh viễn vào sổ tay mục #${added.id} [${added.topic}]: "${added.content}"`);
+
     return await ctx.reply(
       `🧠 **Dạ, Tiểu Cường đã ghi nhớ vĩnh viễn điều này vào sổ tay rồi ạ!**\n\n` +
       `📌 **Mục #${added.id} [${added.topic}]:** "${added.content}"\n\n` +
@@ -333,6 +342,8 @@ async function handleTeachKnowledge(ctx, sessionKey, userName, knowledge) {
     console.error('❌ Lỗi khi học kiến thức mới:', err);
     const added = memoryManager.addMemory(knowledge, 'Kiến thức Sếp dạy');
     getOrCreateChat(sessionKey, userName, true);
+    chatHistoryManager.appendChatTurn(sessionKey, 'user', `[Dạy kiến thức]: ${knowledge}`);
+    chatHistoryManager.appendChatTurn(sessionKey, 'model', `🧠 Dạ, Tiểu Cường đã ghi nhận vào sổ tay mục #${added.id}: "${added.content}"`);
     return await ctx.reply(
       `🧠 **Dạ, Tiểu Cường đã ghi nhận vào sổ tay rồi ạ!**\n\n📌 **Mục #${added.id}:** "${added.content}"`,
       { parse_mode: 'Markdown' }
@@ -416,6 +427,7 @@ bot.command('forget', async (ctx) => {
 // Lệnh /reset hoặc /new để làm mới cuộc trò chuyện
 bot.command(['reset', 'new'], async (ctx) => {
   const sessionKey = getSessionKey(ctx);
+  chatHistoryManager.clearSessionHistory(sessionKey);
   getOrCreateChat(sessionKey, ctx.from.first_name, true);
   await ctx.reply('🧹 Dạ, Tiểu Cường đã dọn dẹp sạch cuộc trò chuyện ngắn hạn cũ! Nhưng các kiến thức trong **Sổ tay vĩnh viễn** thì em vẫn nhớ 100% nha Sếp. Sếp muốn bảo em làm gì tiếp theo đây ạ? 🤩');
 });
@@ -445,6 +457,36 @@ bot.command('help', async (ctx) => {
 Chúc Ba Mẹ có những trải nghiệm thật tuyệt vời! 🚀`;
   await ctx.reply(helpText, { parse_mode: 'Markdown' });
 });
+
+// Bóc tách nội dung trích dẫn (Reply / Quote Reader) để AI hiểu trọn vẹn ngữ cảnh được reply
+function extractQuotedMessage(ctx) {
+  const reply = ctx.message?.reply_to_message;
+  if (!reply) return '';
+
+  let authorName = 'Thành viên';
+  if (reply.from?.id === ctx.me?.id) {
+    authorName = 'Tiểu Cường';
+  } else if (reply.from?.first_name) {
+    authorName = reply.from.first_name;
+  }
+
+  let quotedContent = '';
+  if (reply.text) {
+    quotedContent = reply.text;
+  } else if (reply.caption) {
+    quotedContent = reply.caption;
+  } else if (reply.photo) {
+    quotedContent = '[Hình ảnh]';
+  } else if (reply.document) {
+    quotedContent = `[Tài liệu: ${reply.document.file_name || 'file'}]`;
+  } else if (reply.sticker) {
+    quotedContent = '[Sticker biểu cảm]';
+  } else {
+    quotedContent = '[Nội dung tin nhắn cũ]';
+  }
+
+  return `[Đang trích dẫn tin nhắn của ${authorName}: "${quotedContent.trim()}"]\n`;
+}
 
 // Xử lý tin nhắn hình ảnh (Đồng bộ lưu vào Lịch sử trò chuyện để không bị đứt mạch ngữ cảnh)
 bot.on(':photo', async (ctx) => {
@@ -478,11 +520,13 @@ bot.on(':photo', async (ctx) => {
 
     const displayName = isGroup ? `Gia đình Sếp Mỡ (${ctx.chat.title || 'Nhóm'})` : userName;
     const chat = getOrCreateChat(sessionKey, displayName);
+    const quotePrefix = extractQuotedMessage(ctx);
     const senderPrompt = isGroup ? `[${userName} vừa gửi 1 tấm ảnh kèm chú thích]: ${cleanCaption}` : cleanCaption;
+    const finalPhotoPrompt = `${quotePrefix}${senderPrompt}`;
 
     const result = await chat.sendMessage({
       message: [
-        { text: senderPrompt },
+        { text: finalPhotoPrompt },
         {
           inlineData: {
             data: base64Data,
@@ -494,6 +538,11 @@ bot.on(':photo', async (ctx) => {
 
     clearInterval(typingInterval);
     const replyText = result.text || 'Dạ, em đã xem ảnh nhưng chưa tìm thấy câu trả lời phù hợp ạ!';
+
+    // Lưu vào lịch sử trò chuyện bền vững trên đĩa cứng
+    chatHistoryManager.appendChatTurn(sessionKey, 'user', `${finalPhotoPrompt} [Kèm 1 hình ảnh]`);
+    chatHistoryManager.appendChatTurn(sessionKey, 'model', replyText);
+
     await sendLongMessage(ctx, replyText);
 
   } catch (err) {
@@ -684,9 +733,12 @@ bot.on('message:text', async (ctx) => {
     promptToSend = `${cleanText}\n${fxBlock}${directUrlBlock}${searchBlock}\n(CHÚ Ý BẮT BUỘC TỪ HỆ THỐNG: Bạn PHẢI dựa 100% vào dữ liệu thực tế ở trên để trả lời. TUYỆT ĐỐI CẤM TỰ BỊA GIÁ TIỀN, TỶ GIÁ HAY THÔNG SỐ. Phép tính phải ghi rõ: [Số tiền] x [Tỷ giá] = [Kết quả]).`;
   }
 
+  // Bóc tách nội dung trích dẫn (nếu người dùng bấm Reply tin nhắn cũ)
+  const quotePrefix = extractQuotedMessage(ctx);
+
   // Trong nhóm: Gắn nhãn tên người nói để AI nhận biết người đang tương tác
   const senderPrefix = isGroup ? `[${userName}]: ` : '';
-  const finalPromptForAI = `${senderPrefix}${promptToSend}`;
+  const finalPromptForAI = `${quotePrefix}${senderPrefix}${promptToSend}`;
 
   // 3. Trò chuyện thông thường qua Gemini
   let typingInterval = setInterval(() => {
@@ -703,6 +755,10 @@ bot.on('message:text', async (ctx) => {
 
     const baseReply = response.text || 'Dạ, Tiểu Cường đã ghi nhận ý Sếp!';
     const replyText = `${baseReply}${autoLearnedNote}`;
+
+    // Lưu vào lịch sử trò chuyện bền vững trên đĩa cứng
+    chatHistoryManager.appendChatTurn(sessionKey, 'user', finalPromptForAI);
+    chatHistoryManager.appendChatTurn(sessionKey, 'model', replyText);
 
     console.log(`✅ Gemini phản hồi thành công (${replyText.length} ký tự). Đang gửi về Telegram...`);
     await sendLongMessage(ctx, replyText);
