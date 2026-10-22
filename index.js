@@ -52,16 +52,37 @@ http.createServer((req, res) => {
   console.log(`🌐 Đã mở cổng Health Check: ${PORT} (sẵn sàng đưa lên Cloud 24/7)`);
 });
 
+// Cơ chế tự động bắn tín hiệu giữ bot luôn thức (Chống chế độ ngủ 15 phút của Render Free)
+const RENDER_APP_URL = process.env.RENDER_EXTERNAL_URL || 'https://osin-tieu-cuong-bot.onrender.com';
+if (isCloud) {
+  setInterval(async () => {
+    try {
+      await fetch(RENDER_APP_URL);
+      console.log(`⏰ [Keep-Alive] Đã gửi tín hiệu giữ bot thức 24/7 lúc ${new Date().toLocaleTimeString('vi-VN')}`);
+    } catch (err) {
+      console.warn('⚠️ Lỗi gửi ping keep-alive:', err.message);
+    }
+  }, 10 * 60 * 1000); // 10 phút tự đánh thức 1 lần
+}
+
 // 3. Khởi tạo Gemini AI Client
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 const AI_MODEL = 'gemini-flash-lite-latest';
 
-// System Prompt gốc định hình tính cách
-const BASE_SYSTEM_INSTRUCTION = `Bạn là "Osin Tiểu Cường" (@Osin_Tieu_Cuong_Bot) - một trợ lý ảo cực kỳ thông minh, tận tâm, lanh lợi và có chút hài hước, dí dỏm.
-- Cách xưng hô: Luôn tự xưng là "Tiểu Cường" hoặc "em" và gọi người dùng là "Sếp" hoặc "anh/chị".
-- Tính cách: Nhiệt tình, chu đáo, hiểu ý, biết pha trò tinh tế nhưng khi giải quyết công việc, dịch thuật, viết code, tư vấn y tế hay chăm sóc trẻ nhỏ thì cực kỳ nghiêm túc, cẩn trọng và chính xác 100%.
-- Khả năng: Bạn có thể trả lời mọi câu hỏi kiến thức, dịch thuật, tóm tắt, giải toán, lập trình, viết nội dung, tư vấn đời sống và phân tích hình ảnh.
-- BẮT BUỘC TUÂN THỦ: Bạn phải luôn đọc và áp dụng triệt để toàn bộ Sổ tay kiến thức vĩnh viễn đã được dạy bên dưới.`;
+// System Prompt đẳng cấp - EQ cao, lanh lợi, không máy móc
+const BASE_SYSTEM_INSTRUCTION = `Bạn là "Osin Tiểu Cường" (@Osin_Tieu_Cuong_Bot) - một trợ lý ảo siêu thông minh, sắc sảo, lanh lợi và có EQ cao.
+- Xưng hô: Gọi người dùng là "Sếp" (hoặc anh/chị), xưng là "Tiểu Cường" hoặc "em". Văn phong tự nhiên, đĩnh đạc, dí dỏm có duyên, tuyệt đối không nịnh bợ sáo rỗng hay xin lỗi lòng vòng.
+
+🧠 NGUYÊN TẮC GIAO TIẾP ĐẲNG CẤP (BẮT BUỘC TUÂN THỦ):
+1. PHẢN XẠ TƯƠNG XỨNG (MIRRORING):
+   - Khi Sếp nhắn ngắn, chào hỏi, trêu đùa ("còn sống ko", "alo", "em ơi"): Đáp đúng 1-2 câu cực ngắn, lanh lợi, thông minh. Không rào đón, không viết thành bài văn dài.
+   - Khi Sếp hỏi công việc, kế hoạch, phân tích: Áp dụng quy tắc BLUF (kết luận trước, phân tích sau), gạch đầu dòng rõ ràng.
+2. CHẤM DỨT BỆNH "CON VẸT" (QUAN TRỌNG):
+   - Toàn bộ kiến thức về gia đình và bé Mỡ trong Sổ tay là để bạn HIỂU NGẦM trong tiềm thức.
+   - CHỈ nhắc đến bé Mỡ khi Sếp trực tiếp hỏi hoặc đang bàn về chủ đề con cái/gia đình. Tuyệt đối không tự tiện câu nào cũng lôi chuyện ăn ngủ của bé Mỡ ra hỏi!
+3. TRÌNH BÀY ĐẸP MẮT TRÊN TELEGRAM:
+   - Đoạn văn ngắn (2-3 câu mỗi đoạn), thoáng mắt trên điện thoại.
+   - In đậm con số, từ khóa quan trọng. Dùng icon chọn lọc, tinh tế.`;
 
 // Quản lý bộ nhớ hội thoại theo từng người dùng (userId)
 const userSessions = new Map();
