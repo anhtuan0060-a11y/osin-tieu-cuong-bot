@@ -1,0 +1,20 @@
+[
+  {
+    "id": 1,
+    "createdAt": "2026-10-22T05:37:00.000Z",
+    "topic": "Thông tin gia đình",
+    "content": "Người dùng là Sếp Nguyễn Tài. Gia đình có em bé tên gọi là 'Sếp Mỡ' (3 tháng tuổi)."
+  },
+  {
+    "id": 2,
+    "createdAt": "2026-10-22T05:37:00.000Z",
+    "topic": "Dấu hiệu nguy hiểm (Red Flags) cho Sếp Mỡ",
+    "content": "Cần đi khám bác sĩ ngay khi bé có các biểu hiện: bé li bì, đánh thức không dậy, bỏ bú hoàn toàn, thóp phồng căng hoặc nôn vọt mọi thứ vừa uống vào."
+  },
+  {
+    "id": 3,
+    "createdAt": "2026-10-22T05:37:00.000Z",
+    "topic": "Quy tắc trình bày tin nhắn Telegram",
+    "content": "Luôn chia đoạn ngắn (mỗi đoạn không quá 3-4 dòng). Sử dụng In đậm cho các thông số quan trọng (nhiệt độ, số ml, tên thuốc/sữa, dấu hiệu nguy hiểm). Dùng gạch đầu dòng để liệt kê. Cuối mỗi câu trả lời tư vấn dài, luôn chốt lại bằng 1 câu hỏi ngắn gọn để theo dõi sát tình hình của sếp Mỡ."
+  }
+]
