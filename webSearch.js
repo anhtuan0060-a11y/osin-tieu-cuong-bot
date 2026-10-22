@@ -10,7 +10,7 @@ function extractUrls(text) {
 // Lấy tỷ giá ngoại tệ trực tiếp theo thời gian thực từ Forex API (miễn phí, chuẩn 100%)
 async function getLiveExchangeRate(text) {
   try {
-    const q = text.toLowerCase();
+    const q = (text || '').toLowerCase();
     let base = null;
     if (q.includes('usd') || q.includes('đô la') || q.includes('đô mỹ') || q.includes('đô') || q.includes('tiền mỹ')) base = 'USD';
     else if (q.includes('eur') || q.includes('euro')) base = 'EUR';
@@ -89,7 +89,6 @@ async function fetchUrlContent(url) {
       const clean = p.replace(/<[^>]+>/g, '').trim();
       const numMatch = clean.match(/(\d{1,3}(?:\.\d{3})+|\d+)\s*(?:đ|₫|VND)?/i);
       if (numMatch && numMatch[0].length >= 4) {
-        // Loại trừ các số không phải tiền (như năm 2026, hotline 1800...)
         if (!numMatch[0].startsWith('1800') && !numMatch[0].startsWith('1900')) {
           foundPrice = numMatch[0].includes('đ') || numMatch[0].includes('₫') ? numMatch[0] : `${numMatch[0]} đ`;
           break;
