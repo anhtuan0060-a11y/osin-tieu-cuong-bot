@@ -1,20 +1,26 @@
 [
   {
     "id": 1,
-    "createdAt": "2026-10-22T05:37:00.000Z",
-    "topic": "Thông tin gia đình",
-    "content": "Người dùng là Sếp Nguyễn Tài. Gia đình có em bé tên gọi là 'Sếp Mỡ' (3 tháng tuổi)."
+    "createdAt": "2026-10-22T07:49:00.000Z",
+    "topic": "Hồ sơ đối tượng phục vụ",
+    "content": "Chủ nhân: Ba Mỡ (Sếp Nguyễn Tài) và Mẹ Mỡ. Đối tượng phục vụ tối cao: Em bé tên Mỡ (sinh năm 2026, hiện tại 3 tháng tuổi - 3M)."
   },
   {
     "id": 2,
-    "createdAt": "2026-10-22T05:37:00.000Z",
-    "topic": "Dấu hiệu nguy hiểm (Red Flags) cho Sếp Mỡ",
-    "content": "Cần đi khám bác sĩ ngay khi bé có các biểu hiện: bé li bì, đánh thức không dậy, bỏ bú hoàn toàn, thóp phồng căng hoặc nôn vọt mọi thứ vừa uống vào."
+    "createdAt": "2026-10-22T07:49:00.000Z",
+    "topic": "Lịch sử dinh dưỡng & Sữa",
+    "content": "Sếp Mỡ trào ngược dạ dày sinh lý, đờm họng. Sữa cũ Similac Total Comfort gây táo bón và trào ngược. Đã chuyển sang Aptamil Profutura Cesarbiotik Số 1 New Zealand (100% Lactose tự nhiên, GOS/FOS 9:1, lợi khuẩn B. breve M-16V). Pha chuẩn 40°C (không quá 45°C)."
   },
   {
     "id": 3,
-    "createdAt": "2026-10-22T05:37:00.000Z",
-    "topic": "Quy tắc trình bày tin nhắn Telegram",
-    "content": "Luôn chia đoạn ngắn (mỗi đoạn không quá 3-4 dòng). Sử dụng In đậm cho các thông số quan trọng (nhiệt độ, số ml, tên thuốc/sữa, dấu hiệu nguy hiểm). Dùng gạch đầu dòng để liệt kê. Cuối mỗi câu trả lời tư vấn dài, luôn chốt lại bằng 1 câu hỏi ngắn gọn để theo dõi sát tình hình của sếp Mỡ."
+    "createdAt": "2026-10-22T07:49:00.000Z",
+    "topic": "Chế độ chăm sóc chuẩn 3 Tháng Tuổi",
+    "content": "Gối chống trào ngược dốc 15 độ chỉ nằm 30-45 phút sau vỗ ợ hơi, cấm nằm ngủ xuyên đêm. Thời gian thức (Wake Window) chỉ 1.5 - 2 tiếng. Lượng sữa: cân nặng x 150ml (120-150ml/cữ). Bổ sung Vitamin D3 400 IU/ngày."
+  },
+  {
+    "id": 4,
+    "createdAt": "2026-10-22T07:49:00.000Z",
+    "topic": "Cờ Đỏ cấp cứu (Red Flags)",
+    "content": "Bé 3M sốt ≥ 38.0°C hoặc hạ < 36.0°C; thở ≥ 50 lần/phút hoặc rút lõm ngực; nôn vọt thành vòi liên tục; li bì khó đánh thức, bỏ bú hoàn toàn; thóp phồng căng -> Cảnh báo ba mẹ đưa đi bệnh viện ngay lập tức."
   }
 ]
