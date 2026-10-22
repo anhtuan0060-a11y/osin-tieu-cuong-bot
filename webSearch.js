@@ -7,6 +7,52 @@ function extractUrls(text) {
   return text.match(urlRegex) || [];
 }
 
+// Lấy tỷ giá ngoại tệ trực tiếp theo thời gian thực từ Forex API (miễn phí, chuẩn 100%)
+async function getLiveExchangeRate(text) {
+  try {
+    const q = text.toLowerCase();
+    let base = null;
+    if (q.includes('usd') || q.includes('đô la') || q.includes('đô mỹ') || q.includes('đô') || q.includes('tiền mỹ')) base = 'USD';
+    else if (q.includes('eur') || q.includes('euro')) base = 'EUR';
+    else if (q.includes('jpy') || q.includes('yên') || q.includes('yen')) base = 'JPY';
+    else if (q.includes('cny') || q.includes('tệ') || q.includes('nhân dân tệ')) base = 'CNY';
+    else if (q.includes('krw') || q.includes('won')) base = 'KRW';
+    else if (q.includes('gbp') || q.includes('bảng')) base = 'GBP';
+    else if (q.includes('aud') || q.includes('đô úc')) base = 'AUD';
+    else if (q.includes('sgd') || q.includes('đô sing')) base = 'SGD';
+    else if (q.includes('thb') || q.includes('baht')) base = 'THB';
+    else if (q.includes('tỷ giá') || q.includes('ngoại tệ') || q.includes('đổi tiền')) base = 'USD';
+
+    if (!base) return null;
+
+    const res = await fetch(`https://open.er-api.com/v6/latest/${base}`, { timeout: 6000 });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const rateVND = data.rates?.VND;
+    if (!rateVND) return null;
+
+    const roundedRate = Math.round(rateVND);
+    return {
+      base,
+      rateVND: roundedRate,
+      formattedRate: roundedRate.toLocaleString('vi-VN'),
+      updateTime: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
+    };
+  } catch (err) {
+    console.warn('⚠️ Lỗi tra cứu tỷ giá ngoại tệ:', err.message);
+    return null;
+  }
+}
+
+// Định dạng dữ liệu tỷ giá nạp vào prompt cho AI
+function formatExchangeRate(rateInfo) {
+  if (!rateInfo) return '';
+  return `\n=== [DỮ LIỆU TỶ GIÁ NGOẠI TỆ THỜI GIAN THỰC (REAL-TIME FOREX)] ===\n` +
+         `💵 1 ${rateInfo.base} = ${rateInfo.formattedRate} VNĐ (Cập nhật trực tiếp: ${rateInfo.updateTime})\n` +
+         `📌 LƯU Ý BẮT BUỘC: Bạn BẮT BUỘC phải dùng con số tỷ giá 1 ${rateInfo.base} = ${rateInfo.formattedRate} VNĐ ở trên để tính toán quy đổi cho Sếp. TUYỆT ĐỐI CẤM TỰ BỊA CON SỐ KHÁC.\n` +
+         `===================================================================\n`;
+}
+
 // Bóc tách nội dung trực tiếp từ 1 trang web (Con Cưng, KidsPlaza, Shopee, Bibomart...)
 async function fetchUrlContent(url) {
   try {
@@ -158,6 +204,8 @@ function formatSearchResults(results) {
 
 module.exports = {
   extractUrls,
+  getLiveExchangeRate,
+  formatExchangeRate,
   fetchUrlContent,
   formatUrlContent,
   searchWeb,

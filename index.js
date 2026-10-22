@@ -1,12 +1,13 @@
 require('dotenv').config();
+const fs = require('fs');
 const http = require('http');
 const https = require('https');
 const dns = require('dns');
 const fetch = require('node-fetch');
-const { Bot } = require('grammy');
+const { Bot, InputFile } = require('grammy');
 const { GoogleGenAI } = require('@google/genai');
 const memoryManager = require('./memoryManager');
-const { searchWeb, formatSearchResults, fetchUrlContent, formatUrlContent, extractUrls } = require('./webSearch');
+const { searchWeb, formatSearchResults, fetchUrlContent, formatUrlContent, extractUrls, getLiveExchangeRate, formatExchangeRate } = require('./webSearch');
 
 // Kiểm tra biến môi trường
 if (!process.env.TELEGRAM_BOT_TOKEN) {
@@ -170,37 +171,44 @@ Bạn phục vụ chăm sóc cho em bé sơ sinh (Sếp Mỡ, 3 tháng tuổi). 
    - Vitamin D3: 400 IU/ngày.
    - Trẻ 3 tháng tuổi sốt >= 38.0°C hoặc thở >= 50 lần/phút, rút lõm lồng ngực: CẢNH BÁO ĐI VIỆN NGAY LẬP TỨC. Cấm tự kê kháng sinh, cấm khuyên mẹo dân gian nguy hiểm.`;
 
-// Quản lý bộ nhớ hội thoại theo từng người dùng (userId)
+// Quản lý phiên hội thoại AI (Tách biệt rõ: Group theo nhóm, Chat riêng theo người dùng)
 const userSessions = new Map();
 
-// Quản lý ngữ cảnh chủ thể sản phẩm gần nhất cho từng người dùng
-const userContexts = new Map();
-function getUserContext(userId) {
-  if (!userContexts.has(userId)) {
-    userContexts.set(userId, {
-      lastProduct: 'sữa Aptamil Profutura Cesarbiotik số 1 (New Zealand)'
+// Trả về khóa phiên duy nhất (Group: 'group_<id>', Chat riêng: 'user_<id>')
+function getSessionKey(ctx) {
+  const isGroup = ctx.chat.type === 'group' || ctx.chat.type === 'supergroup';
+  return isGroup ? `group_${ctx.chat.id}` : `user_${ctx.from.id}`;
+}
+
+// Quản lý ngữ cảnh chủ đề gần nhất cho từng phiên (Group hoặc User)
+const sessionContexts = new Map();
+function getSessionContext(sessionKey) {
+  if (!sessionContexts.has(sessionKey)) {
+    sessionContexts.set(sessionKey, {
+      lastProduct: 'sữa Aptamil Profutura Cesarbiotik số 1 (New Zealand)',
+      lastSubject: 'general'
     });
   }
-  return userContexts.get(userId);
+  return sessionContexts.get(sessionKey);
 }
 
-function buildSystemPrompt(userName) {
+function buildSystemPrompt(displayName) {
   const dynamicMemories = memoryManager.formatMemoriesForPrompt();
-  return `${BASE_SYSTEM_INSTRUCTION}\nNgười đang trò chuyện với bạn tên là: ${userName || 'Sếp'}.${dynamicMemories}`;
+  return `${BASE_SYSTEM_INSTRUCTION}\nNgười / Nhóm đang trò chuyện với bạn là: ${displayName || 'Gia đình Sếp Mỡ'}.${dynamicMemories}`;
 }
 
-function getOrCreateChat(userId, userName, forceReset = false) {
-  if (forceReset || !userSessions.has(userId)) {
-    const fullPrompt = buildSystemPrompt(userName);
+function getOrCreateChat(sessionKey, displayName, forceReset = false) {
+  if (forceReset || !userSessions.has(sessionKey)) {
+    const fullPrompt = buildSystemPrompt(displayName);
     const chat = ai.chats.create({
       model: AI_MODEL,
       config: {
         systemInstruction: fullPrompt
       }
     });
-    userSessions.set(userId, chat);
+    userSessions.set(sessionKey, chat);
   }
-  return userSessions.get(userId);
+  return userSessions.get(sessionKey);
 }
 
 // 4. Khởi tạo Telegram Bot (Tự động thích ứng Cloud / Local)
@@ -242,20 +250,23 @@ async function sendLongMessage(ctx, text) {
 
 // Lệnh /start
 bot.command('start', async (ctx) => {
+  const sessionKey = getSessionKey(ctx);
   const userName = ctx.from.first_name || 'Sếp';
-  getOrCreateChat(ctx.from.id, userName);
+  getOrCreateChat(sessionKey, userName);
 
   const welcomeMessage = `👋 **Dạ, Osin Tiểu Cường xin kính chào Sếp ${userName}!** 🙇‍♂️
 
-Em là trợ lý ảo AI cao cấp chạy bằng công nghệ **Google Gemini**, đã được nâng cấp tính năng **BỘ NHỚ VĨNH VIỄN**!
+Em là trợ lý ảo AI cao cấp chạy bằng công nghệ **Google Gemini**, đã được nâng cấp tính năng **BỘ NHỚ THÔNG MINH CHỐNG XUNG ĐỘT**!
 
 🧠 **Em có thể học và nhớ lâu dài:**
 • Mọi điều Sếp dặn sẽ được ghi vào **Sổ tay vĩnh viễn**, không bao giờ bị quên dù tắt máy hay khởi động lại.
+• Tự động kiểm tra xung đột: nếu kiến thức mới va chạm với điều cũ, em sẽ hỏi lại Ba Mỡ ngay để tránh nhớ sai!
 • Dạy em nhanh: Nhắn *"Ghi nhớ: [nội dung]"* hoặc dùng lệnh \`/learn [nội dung]\`.
 
 ⚙️ **Các lệnh chính:**
 /sotay hoặc /memory - Xem lại toàn bộ điều em đã ghi nhớ
-/learn [nội dung] - Dạy kiến thức mới
+/learn [nội dung] - Dạy kiến thức mới (tự động chống xung đột)
+/backup hoặc /export - Tải file sao lưu sổ tay về máy
 /forget [mã số] - Xóa một điều đã ghi nhớ
 /reset - Bắt đầu cuộc trò chuyện mới
 /help - Xem hướng dẫn
@@ -271,6 +282,64 @@ bot.command(['sotay', 'memory'], async (ctx) => {
   await sendLongMessage(ctx, text);
 });
 
+// Quản lý trạng thái chờ xác nhận xung đột bộ nhớ
+const pendingConflicts = new Map();
+
+// Hàm xử lý dạy kiến thức mới có kiểm tra xung đột logic thông minh
+async function handleTeachKnowledge(ctx, sessionKey, userName, knowledge) {
+  let typingInterval = setInterval(() => {
+    ctx.replyWithChatAction('typing').catch(() => {});
+  }, 4000);
+  await ctx.replyWithChatAction('typing').catch(() => {});
+
+  try {
+    const check = await memoryManager.checkMemoryConflict(ai, knowledge);
+    clearInterval(typingInterval);
+
+    if (check.hasConflict && check.conflictId) {
+      pendingConflicts.set(sessionKey, {
+        newKnowledge: knowledge,
+        conflictId: check.conflictId,
+        oldContent: check.oldContent,
+        topic: check.suggestedTopic || 'Kiến thức Sếp dạy',
+        timestamp: Date.now()
+      });
+
+      const msg = `⚠️ **Ba Mỡ ơi, Tiểu Cường phát hiện kiến thức mới này đang XUNG ĐỘT với điều em đã nhớ trước đây:**\n\n` +
+                  `📌 **Điều cũ (#${check.conflictId}):** "${check.oldContent}"\n\n` +
+                  `🆕 **Điều mới Ba vừa dặn:** "${knowledge}"\n` +
+                  `❓ **Lý do xung đột:** ${check.reason || 'Có sự mâu thuẫn trực tiếp giữa kiến thức mới và cũ'}\n\n` +
+                  `Ba có muốn em **THAY THẾ** điều cũ bằng điều mới này không ạ?\n\n` +
+                  `👉 Nhắn **"Thay thế"** (hoặc /thaythe) để cập nhật mới.\n` +
+                  `👉 Nhắn **"Giữ cả hai"** (hoặc /giucahai) nếu muốn lưu thêm song song.\n` +
+                  `👉 Nhắn **"Hủy"** (hoặc /huy) nếu Ba dặn nhầm nhé!`;
+
+      return await ctx.reply(msg, { parse_mode: 'Markdown' });
+    }
+
+    const topic = check.suggestedTopic || 'Kiến thức Sếp dạy';
+    const added = memoryManager.addMemory(knowledge, topic);
+    getOrCreateChat(sessionKey, userName, true);
+    console.log(`🧠 Đã lưu kiến thức mới #${added.id} [${added.topic}]: "${added.content}"`);
+
+    return await ctx.reply(
+      `🧠 **Dạ, Tiểu Cường đã ghi nhớ vĩnh viễn điều này vào sổ tay rồi ạ!**\n\n` +
+      `📌 **Mục #${added.id} [${added.topic}]:** "${added.content}"\n\n` +
+      `Em đã đối chiếu kiểm tra không thấy xung đột với các điều cũ. Em đã khắc sâu vào tiềm thức rồi nha Ba Mỡ! 🥰`,
+      { parse_mode: 'Markdown' }
+    );
+  } catch (err) {
+    clearInterval(typingInterval);
+    console.error('❌ Lỗi khi học kiến thức mới:', err);
+    const added = memoryManager.addMemory(knowledge, 'Kiến thức Sếp dạy');
+    getOrCreateChat(sessionKey, userName, true);
+    return await ctx.reply(
+      `🧠 **Dạ, Tiểu Cường đã ghi nhận vào sổ tay rồi ạ!**\n\n📌 **Mục #${added.id}:** "${added.content}"`,
+      { parse_mode: 'Markdown' }
+    );
+  }
+}
+
 // Lệnh /learn hoặc /ghinho: Dạy kiến thức mới
 bot.command(['learn', 'ghinho'], async (ctx) => {
   const content = ctx.match;
@@ -278,10 +347,53 @@ bot.command(['learn', 'ghinho'], async (ctx) => {
     return await ctx.reply('⚠️ Sếp ơi, Sếp hãy nhắn theo cú pháp: `/learn [nội dung cần dạy]` nhé!\nVí dụ: `/learn Sếp Mỡ thích nghe nhạc Ru con khi ngủ`', { parse_mode: 'Markdown' });
   }
 
-  const added = memoryManager.addMemory(content.trim(), 'Kiến thức Sếp dạy');
-  getOrCreateChat(ctx.from.id, ctx.from.first_name, true);
+  const sessionKey = getSessionKey(ctx);
+  const userName = ctx.from.first_name || 'Sếp';
+  await handleTeachKnowledge(ctx, sessionKey, userName, content.trim());
+});
 
-  await ctx.reply(`✅ **Dạ, Tiểu Cường đã ghi nhận vào não vĩnh viễn rồi ạ!** 🧠\n\n📌 **Mục #${added.id}:** "${added.content}"\n\nTừ nay trở đi, dù có tắt máy hay chuyển máy chủ thì em cũng không bao giờ quên điều này đâu ạ! 🥰`, { parse_mode: 'Markdown' });
+// Lệnh /thaythe: Xác nhận thay thế kiến thức cũ khi có xung đột
+bot.command('thaythe', async (ctx) => {
+  const sessionKey = getSessionKey(ctx);
+  if (!pendingConflicts.has(sessionKey)) return await ctx.reply('Dạ hiện tại không có xung đột nào đang chờ xử lý ạ!');
+  const pending = pendingConflicts.get(sessionKey);
+  const updated = memoryManager.updateMemory(pending.conflictId, pending.newKnowledge, pending.topic);
+  pendingConflicts.delete(sessionKey);
+  getOrCreateChat(sessionKey, ctx.from.first_name, true);
+  await ctx.reply(`✅ **Dạ, Tiểu Cường đã THAY THẾ thành công mục #${pending.conflictId}!**\n\n📌 **Nội dung mới:** "${updated.content}"\n\nSổ tay đã được làm mới chuẩn chỉnh rồi nha Ba Mỡ! 🥰`, { parse_mode: 'Markdown' });
+});
+
+// Lệnh /giucahai: Lưu thêm mục mới song song với mục cũ
+bot.command('giucahai', async (ctx) => {
+  const sessionKey = getSessionKey(ctx);
+  if (!pendingConflicts.has(sessionKey)) return await ctx.reply('Dạ hiện tại không có xung đột nào đang chờ xử lý ạ!');
+  const pending = pendingConflicts.get(sessionKey);
+  const added = memoryManager.addMemory(pending.newKnowledge, pending.topic);
+  pendingConflicts.delete(sessionKey);
+  getOrCreateChat(sessionKey, ctx.from.first_name, true);
+  await ctx.reply(`✅ **Dạ, Tiểu Cường đã lưu thêm thành mục mới #${added.id} [${added.topic}] song song với mục cũ ạ!**`, { parse_mode: 'Markdown' });
+});
+
+// Lệnh /huy: Hủy cập nhật
+bot.command('huy', async (ctx) => {
+  const sessionKey = getSessionKey(ctx);
+  if (pendingConflicts.has(sessionKey)) {
+    const pending = pendingConflicts.get(sessionKey);
+    pendingConflicts.delete(sessionKey);
+    await ctx.reply(`👌 Dạ, Tiểu Cường đã hủy yêu cầu cập nhật. Điều cũ (#${pending.conflictId}) vẫn được giữ nguyên vẹn 100% ạ!`);
+  } else {
+    await ctx.reply('Dạ hiện tại không có thao tác nào cần hủy ạ!');
+  }
+});
+
+// Lệnh /backup hoặc /export: Gửi file sao lưu trực tiếp về Telegram
+bot.command(['backup', 'export'], async (ctx) => {
+  const filePath = memoryManager.getPrimaryMemoryFile();
+  if (!fs.existsSync(filePath)) {
+    return await ctx.reply('⚠️ Chưa có dữ liệu memory.json để backup Sếp ơi!');
+  }
+  await ctx.reply('📦 **Dạ, Tiểu Cường gửi ngay file sao lưu Sổ tay kiến thức (memory.json) cho Ba Mỡ cất giữ an toàn đây ạ:**', { parse_mode: 'Markdown' });
+  await ctx.replyWithDocument(new InputFile(filePath, 'memory.json'));
 });
 
 // Lệnh /forget: Xóa một kiến thức đã nhớ
@@ -293,7 +405,8 @@ bot.command('forget', async (ctx) => {
 
   const ok = memoryManager.deleteMemory(id);
   if (ok) {
-    getOrCreateChat(ctx.from.id, ctx.from.first_name, true);
+    const sessionKey = getSessionKey(ctx);
+    getOrCreateChat(sessionKey, ctx.from.first_name, true);
     await ctx.reply(`🗑️ Dạ, Tiểu Cường đã xóa mục #${id} khỏi sổ tay ghi nhớ rồi ạ!`);
   } else {
     await ctx.reply(`❌ Không tìm thấy mục mang mã số #${id} trong sổ tay Sếp ơi!`);
@@ -302,7 +415,8 @@ bot.command('forget', async (ctx) => {
 
 // Lệnh /reset hoặc /new để làm mới cuộc trò chuyện
 bot.command(['reset', 'new'], async (ctx) => {
-  getOrCreateChat(ctx.from.id, ctx.from.first_name, true);
+  const sessionKey = getSessionKey(ctx);
+  getOrCreateChat(sessionKey, ctx.from.first_name, true);
   await ctx.reply('🧹 Dạ, Tiểu Cường đã dọn dẹp sạch cuộc trò chuyện ngắn hạn cũ! Nhưng các kiến thức trong **Sổ tay vĩnh viễn** thì em vẫn nhớ 100% nha Sếp. Sếp muốn bảo em làm gì tiếp theo đây ạ? 🤩');
 });
 
@@ -310,26 +424,44 @@ bot.command(['reset', 'new'], async (ctx) => {
 bot.command('help', async (ctx) => {
   const helpText = `📖 **HƯỚNG DẪN SỬ DỤNG OSIN TIỂU CƯỜNG:**
 
-1. **Dạy học cho Bot (Bộ nhớ vĩnh viễn):**
+1. **Dạy học cho Bot (Bộ nhớ thông minh chống xung đột):**
    • Nhắn: *Ghi nhớ: [điều cần nhớ]*
    • Hoặc dùng lệnh: \`/learn [nội dung]\`
+   • Nếu kiến thức mới mâu thuẫn với điều cũ, bot sẽ lập tức hỏi lại Ba Mỡ để chọn *Thay thế* hay *Giữ cả hai*.
    • Xem những gì bot đã nhớ: \`/sotay\`
+   • Tải file sao lưu về máy: \`/backup\`
    • Xóa điều đã nhớ: \`/forget [mã số]\`
 
-2. **Gửi hình ảnh:**
+2. **Soi link mua hàng & Check giá thực tế:**
+   • Gửi bất kỳ link Con Cưng, Shopee, KidsPlaza nào, bot sẽ tự cào giá niêm yết chuẩn đét!
+   • Hỏi giá, quy cách hộp nhỏ, hộp lớn.
+
+3. **Gửi hình ảnh:**
    Gửi 1 tấm ảnh kèm chú thích (caption), em sẽ soi kỹ và trả lời chi tiết.
 
-3. **Trò chuyện & Công việc:**
+4. **Trò chuyện & Chăm sóc Sếp Mỡ:**
    Cứ hỏi đáp tự nhiên, bot tự nhớ ngữ cảnh và áp dụng quy tắc đã học.
 
-Chúc Sếp có những trải nghiệm thật tuyệt vời! 🚀`;
+Chúc Ba Mẹ có những trải nghiệm thật tuyệt vời! 🚀`;
   await ctx.reply(helpText, { parse_mode: 'Markdown' });
 });
 
-// Xử lý tin nhắn hình ảnh
+// Xử lý tin nhắn hình ảnh (Đồng bộ lưu vào Lịch sử trò chuyện để không bị đứt mạch ngữ cảnh)
 bot.on(':photo', async (ctx) => {
+  const isGroup = ctx.chat.type === 'group' || ctx.chat.type === 'supergroup';
+  const botUsername = ctx.me.username;
+  const caption = ctx.message.caption || '';
+  const isMentioned = caption.toLowerCase().includes(`@${botUsername.toLowerCase()}`);
+  const isReplyToBot = ctx.message.reply_to_message?.from?.id === ctx.me.id;
+
+  // Trong nhóm: chỉ trả lời khi được tag @ hoặc bấm reply ảnh vào bot
+  if (isGroup && !isMentioned && !isReplyToBot && caption) {
+    return;
+  }
+
+  const sessionKey = getSessionKey(ctx);
   const userName = ctx.from.first_name || 'Sếp';
-  const caption = ctx.message.caption || 'Hãy phân tích chi tiết hình ảnh này giúp tôi.';
+  const cleanCaption = caption.replace(new RegExp(`@${botUsername}`, 'gi'), '').trim() || 'Hãy phân tích chi tiết hình ảnh này giúp tôi.';
 
   let typingInterval = setInterval(() => {
     ctx.replyWithChatAction('typing').catch(() => {});
@@ -344,21 +476,18 @@ bot.on(':photo', async (ctx) => {
     const buffer = await response.buffer();
     const base64Data = buffer.toString('base64');
 
-    const promptWithMemory = `${buildSystemPrompt(userName)}\nCâu hỏi/Yêu cầu: ${caption}`;
-    const result = await ai.models.generateContent({
-      model: AI_MODEL,
-      contents: [
+    const displayName = isGroup ? `Gia đình Sếp Mỡ (${ctx.chat.title || 'Nhóm'})` : userName;
+    const chat = getOrCreateChat(sessionKey, displayName);
+    const senderPrompt = isGroup ? `[${userName} vừa gửi 1 tấm ảnh kèm chú thích]: ${cleanCaption}` : cleanCaption;
+
+    const result = await chat.sendMessage({
+      message: [
+        { text: senderPrompt },
         {
-          role: 'user',
-          parts: [
-            { text: promptWithMemory },
-            {
-              inlineData: {
-                data: base64Data,
-                mimeType: 'image/jpeg'
-              }
-            }
-          ]
+          inlineData: {
+            data: base64Data,
+            mimeType: 'image/jpeg'
+          }
         }
       ]
     });
@@ -393,12 +522,49 @@ bot.on('message:text', async (ctx) => {
   const cleanText = text.replace(new RegExp(`@${botUsername}`, 'gi'), '').trim();
   if (!cleanText) return;
 
+  const sessionKey = getSessionKey(ctx);
   const userId = ctx.from.id;
   const userName = ctx.from.first_name || 'Sếp';
+  const sessionCtx = getSessionContext(sessionKey);
 
-  console.log(`📩 [${new Date().toLocaleTimeString('vi-VN')}] Nhận tin từ ${userName} (${isGroup ? 'Nhóm' : 'Chat riêng'}): "${cleanText}"`);
+  console.log(`📩 [${new Date().toLocaleTimeString('vi-VN')}] Nhận tin từ ${userName} (${isGroup ? `Nhóm ${ctx.chat.id}` : 'Chat riêng'}): "${cleanText}"`);
 
-  // 1. Nhận diện tự động nếu người dùng muốn dạy kiến thức
+  // 0. Kiểm tra nếu phiên này đang có yêu cầu giải quyết xung đột bộ nhớ
+  if (pendingConflicts.has(sessionKey)) {
+    const pending = pendingConflicts.get(sessionKey);
+    const low = cleanText.toLowerCase();
+
+    if (low === 'thay thế' || low === 'thay the' || low === 'đồng ý thay thế' || low === 'dong y thay the') {
+      const updated = memoryManager.updateMemory(pending.conflictId, pending.newKnowledge, pending.topic);
+      pendingConflicts.delete(sessionKey);
+      getOrCreateChat(sessionKey, userName, true);
+      return await ctx.reply(
+        `✅ **Dạ, Tiểu Cường đã THAY THẾ thành công mục #${pending.conflictId}!**\n\n` +
+        `📌 **Nội dung mới:** "${updated.content}"\n\n` +
+        `Sổ tay đã được làm mới chuẩn xác theo lệnh của Ba Mỡ rồi ạ! 🙇‍♂️`,
+        { parse_mode: 'Markdown' }
+      );
+    }
+
+    if (low === 'giữ cả hai' || low === 'giu ca hai' || low === 'lưu cả hai') {
+      const added = memoryManager.addMemory(pending.newKnowledge, pending.topic);
+      pendingConflicts.delete(sessionKey);
+      getOrCreateChat(sessionKey, userName, true);
+      return await ctx.reply(
+        `✅ **Dạ, Tiểu Cường đã lưu thêm thành mục mới #${added.id} [${added.topic}]!**\n\n` +
+        `📌 **Mục mới:** "${added.content}"\n` +
+        `📌 **Mục cũ (#${pending.conflictId}):** Vẫn được giữ nguyên vẹn song song ạ!`,
+        { parse_mode: 'Markdown' }
+      );
+    }
+
+    if (low === 'hủy' || low === 'huy' || low === 'bỏ qua') {
+      pendingConflicts.delete(sessionKey);
+      return await ctx.reply(`👌 Dạ, Tiểu Cường đã hủy yêu cầu cập nhật. Điều cũ (#${pending.conflictId}) vẫn được giữ nguyên vẹn 100% ạ!`);
+    }
+  }
+
+  // 1. Nhận diện tự động nếu người dùng muốn dạy kiến thức rõ ràng
   const teachPatterns = [
     /^ghi nhớ\s*:\s*(.+)/i,
     /^nhớ nhé\s*:\s*(.+)/i,
@@ -412,35 +578,36 @@ bot.on('message:text', async (ctx) => {
     const match = cleanText.match(pattern);
     if (match && match[1]) {
       const knowledge = match[1].trim();
-      const added = memoryManager.addMemory(knowledge, 'Kiến thức Sếp dạy');
-      getOrCreateChat(userId, userName, true);
-      console.log(`🧠 Đã lưu kiến thức mới #${added.id}: "${added.content}"`);
-      return await ctx.reply(`🧠 **Dạ, Tiểu Cường đã ghi nhớ vĩnh viễn điều này vào sổ tay rồi ạ!**\n\n📌 **Mục #${added.id}:** "${added.content}"\n\nEm đã khắc sâu vào tiềm thức, kể cả khi tắt máy hay bảo trì em cũng sẽ không bao giờ quên ạ! 🥰`, { parse_mode: 'Markdown' }).catch(async () => {
-        await ctx.reply(`🧠 Dạ, Tiểu Cường đã ghi nhớ vĩnh viễn điều này vào sổ tay rồi ạ!\n\nMục #${added.id}: "${added.content}"`);
-      });
+      return await handleTeachKnowledge(ctx, sessionKey, userName, knowledge);
     }
   }
 
-  // 2. Trích xuất link trực tiếp (URL Scraper) & Tra cứu Internet thông minh
+  // 2. Tra cứu Dữ liệu Trực tiếp (Tỷ giá ngoại tệ hoặc Web Search)
   let promptToSend = cleanText;
-  const userCtx = getUserContext(userId);
+  let fxBlock = '';
+  let directUrlBlock = '';
+  let searchBlock = '';
 
-  // Cập nhật chủ thể sản phẩm gần nhất nếu tin nhắn có đề cập
-  const productDetectionList = ['aptamil', 'similac', 'meiji', 'nan', 'colosbaby', 'friso', 'bỉm', 'tã', 'd3k2', 'lineabon', 'gối', 'bình sữa'];
-  for (const pd of productDetectionList) {
-    if (cleanText.toLowerCase().includes(pd)) {
-      if (cleanText.toLowerCase().includes('aptamil')) {
-        userCtx.lastProduct = 'sữa Aptamil Profutura Cesarbiotik số 1 (New Zealand)';
-      } else {
-        userCtx.lastProduct = cleanText.split(/[,.?!]/)[0].trim();
-      }
-      break;
+  // A. Tra cứu TỶ GIÁ NGOẠI TỆ THEO THỜI GIAN THỰC (USD, EUR, JPY...)
+  const currencyKeywords = ['usd', 'đô la', 'đô mỹ', 'đô', 'tỷ giá', 'ngoại tệ', 'eur', 'euro', 'jpy', 'yên', 'tiền việt', 'vnd', 'quy đổi', 'đổi tiền'];
+  const isCurrencyQuery = currencyKeywords.some(ck => cleanText.toLowerCase().includes(ck));
+
+  // Nhận diện phản hồi nghi vấn hoặc yêu cầu tính lại ("sai rồi", "tính lại", "check lại", "thật không")
+  const doubtKeywords = ['sai rồi', 'sai roi', 'tính lại', 'tinh lai', 'check lại', 'check lai', 'xem lại', 'thật không', 'chính xác chưa', 'đúng không', 'bậy rồi', 'bậy'];
+  const isDoubtQuery = doubtKeywords.some(dk => cleanText.toLowerCase().includes(dk));
+
+  if (isCurrencyQuery || (isDoubtQuery && sessionCtx.lastSubject === 'currency')) {
+    console.log(`💵 [Live FX Rate] Đang lấy tỷ giá liên ngân hàng cho: "${cleanText}"...`);
+    const fxInfo = await getLiveExchangeRate(cleanText);
+    if (fxInfo) {
+      sessionCtx.lastSubject = 'currency';
+      fxBlock = formatExchangeRate(fxInfo);
+      console.log(`💵 [Live FX Rate] 1 ${fxInfo.base} = ${fxInfo.formattedRate} VNĐ`);
     }
   }
 
-  // A. Nếu người dùng gửi kèm đường link cụ thể (Con Cưng, Shopee, KidsPlaza...)
+  // B. Bóc tách nội dung nếu có link URL
   const detectedUrls = extractUrls(cleanText);
-  let directUrlBlock = '';
   if (detectedUrls.length > 0) {
     try {
       console.log(`🔗 [URL Scraper] Phát hiện link từ Sếp: ${detectedUrls[0]}`);
@@ -454,23 +621,22 @@ bot.on('message:text', async (ctx) => {
     }
   }
 
-  // B. Tra cứu Internet thời gian thực nếu câu hỏi cần tìm giá, link mua, quy cách
+  // C. Tra cứu Internet sản phẩm / giá cả nếu cần
   const searchKeywords = [
     'giá', 'mua ở đâu', 'link mua', 'link', 'so sánh giá', 'bao nhiêu tiền',
     'ở đâu bán', 'tìm kiếm', 'tra cứu', 'hôm nay', 'tin tức', 'thời tiết',
     'shopee', 'lazada', 'tiki', 'con cưng', 'bibomart', 'kidsplaza', 'khuyến mãi', 'sale',
     'hộp nhỏ', 'hộp lớn', 'lon', '380g', '800g', '900g', 'mấy lạng', 'quy cách'
   ];
-  const isSearchNeeded = searchKeywords.some(kw => cleanText.toLowerCase().includes(kw));
+  const isSearchNeeded = searchKeywords.some(kw => cleanText.toLowerCase().includes(kw)) || (isDoubtQuery && sessionCtx.lastSubject === 'product');
 
-  let searchBlock = '';
-  if (isSearchNeeded) {
+  if (isSearchNeeded && !fxBlock) {
     try {
-      // Tự động bổ sung chủ thể sản phẩm nếu câu hỏi cộc lốc/thiếu tên sản phẩm
+      sessionCtx.lastSubject = 'product';
       let searchQuery = cleanText;
       const hasBrand = ['aptamil', 'similac', 'meiji', 'nan', 'colosbaby', 'sữa', 'bỉm', 'tã', 'd3k2'].some(b => cleanText.toLowerCase().includes(b));
-      if (!hasBrand && userCtx.lastProduct) {
-        searchQuery = `${userCtx.lastProduct} ${cleanText}`;
+      if (!hasBrand && sessionCtx.lastProduct) {
+        searchQuery = `${sessionCtx.lastProduct} ${cleanText}`;
         console.log(`🔍 [Context Search] Đã ghép ngữ cảnh vào truy vấn: "${searchQuery}"`);
       }
 
@@ -481,7 +647,6 @@ bot.on('message:text', async (ctx) => {
         searchBlock = formatSearchResults(searchResults);
         console.log(`🌐 [Web Search] Đã lấy được ${searchResults.length} kết quả thực tế.`);
 
-        // Quét thêm link cửa hàng hàng đầu nếu chưa có link từ người dùng để lấy giá niêm yết chuẩn đét
         if (!directUrlBlock) {
           const topShop = searchResults.find(r => r.url.includes('concung.com') || r.url.includes('kidsplaza.vn'));
           if (topShop) {
@@ -502,10 +667,26 @@ bot.on('message:text', async (ctx) => {
     }
   }
 
-  // Ghép toàn bộ dữ liệu thực tế vào Prompt gửi cho Gemini
-  if (directUrlBlock || searchBlock) {
-    promptToSend = `${cleanText}\n${directUrlBlock}${searchBlock}\n(CHÚ Ý BẮT BUỘC TỪ HỆ THỐNG: Bạn PHẢI dựa 100% vào dữ liệu thực tế từ link web và kết quả tìm kiếm ở trên để trả lời. TUYỆT ĐỐI CẤM TỰ BỊA GIÁ TIỀN, CẤM ĐOÁN MÒ HOẶC NÓI HÃNG KHÔNG SẢN XUẤT. Nếu không có con số giá cụ thể, hãy hướng dẫn Ba bấm thẳng vào link để kiểm tra nhé!).`;
+  // D. Nhận diện tự động và lưu ngầm mốc phát triển của Sếp Mỡ (Auto-Learn Context)
+  let autoLearnedNote = '';
+  const weightMatch = cleanText.match(/(?:cân|nặng|kí|kg)\s*(?:được|là|tầm)?\s*(\d+(?:[.,]\d+)?)\s*(?:kg|kí|cân)/i);
+  if (weightMatch) {
+    const weightVal = weightMatch[1].replace(',', '.');
+    if (parseFloat(weightVal) >= 3 && parseFloat(weightVal) <= 15) {
+      const todayStr = new Date().toLocaleDateString('vi-VN');
+      memoryManager.addMemory(`Mốc cân nặng Sếp Mỡ: ${weightVal} kg (Ghi nhận ngày ${todayStr})`, 'Thể trạng & Cân nặng Sếp Mỡ');
+      autoLearnedNote = `\n\n💡 *(Tiểu Cường đã tự động ghi nhớ mốc cân nặng **${weightVal} kg** của Sếp Mỡ vào sổ tay theo dõi rồi nha Ba Mẹ!)*`;
+    }
   }
+
+  // Ghép toàn bộ dữ liệu thực tế vào Prompt gửi cho Gemini
+  if (fxBlock || directUrlBlock || searchBlock) {
+    promptToSend = `${cleanText}\n${fxBlock}${directUrlBlock}${searchBlock}\n(CHÚ Ý BẮT BUỘC TỪ HỆ THỐNG: Bạn PHẢI dựa 100% vào dữ liệu thực tế ở trên để trả lời. TUYỆT ĐỐI CẤM TỰ BỊA GIÁ TIỀN, TỶ GIÁ HAY THÔNG SỐ. Phép tính phải ghi rõ: [Số tiền] x [Tỷ giá] = [Kết quả]).`;
+  }
+
+  // Trong nhóm: Gắn nhãn tên người nói để AI nhận biết người đang tương tác
+  const senderPrefix = isGroup ? `[${userName}]: ` : '';
+  const finalPromptForAI = `${senderPrefix}${promptToSend}`;
 
   // 3. Trò chuyện thông thường qua Gemini
   let typingInterval = setInterval(() => {
@@ -514,12 +695,15 @@ bot.on('message:text', async (ctx) => {
   await ctx.replyWithChatAction('typing').catch(() => {});
 
   try {
-    console.log(`🤖 Đang gửi câu hỏi cho Gemini AI...`);
-    const chat = getOrCreateChat(userId, userName);
-    const response = await chat.sendMessage({ message: promptToSend });
+    console.log(`🤖 Đang gửi câu hỏi cho Gemini AI (Phiên: ${sessionKey})...`);
+    const displayName = isGroup ? `Gia đình Sếp Mỡ (${ctx.chat.title || 'Nhóm'})` : userName;
+    const chat = getOrCreateChat(sessionKey, displayName);
+    const response = await chat.sendMessage({ message: finalPromptForAI });
     clearInterval(typingInterval);
 
-    const replyText = response.text || 'Dạ, Tiểu Cường đã ghi nhận ý Sếp!';
+    const baseReply = response.text || 'Dạ, Tiểu Cường đã ghi nhận ý Sếp!';
+    const replyText = `${baseReply}${autoLearnedNote}`;
+
     console.log(`✅ Gemini phản hồi thành công (${replyText.length} ký tự). Đang gửi về Telegram...`);
     await sendLongMessage(ctx, replyText);
     console.log(`📤 Đã gửi tin nhắn cho Sếp thành công!`);
@@ -531,7 +715,7 @@ bot.on('message:text', async (ctx) => {
     if (err.message && (err.message.includes('429') || err.message.includes('quota'))) {
       await ctx.reply('Dạ Sếp ơi, Google đang tạm nghẽn một chút do nhiều người gọi quá (hạn mức tạm thời). Sếp đợi em khoảng 10-15 giây rồi nhắn lại nhé! 🙇‍♂️').catch(() => {});
     } else {
-      userSessions.delete(userId);
+      userSessions.delete(sessionKey);
       await ctx.reply('Dạ Sếp ơi, vừa có chút chập điện trong mạch não AI của em, em đã tự khởi động lại rồi. Sếp nhắn lại câu vừa rồi giúp em nhé! 🙏').catch(() => {});
     }
   }

@@ -2,25 +2,64 @@
   {
     "id": 1,
     "createdAt": "2026-10-22T07:49:00.000Z",
+    "updatedAt": "2026-10-22T09:20:00.000Z",
     "topic": "Hồ sơ đối tượng phục vụ",
-    "content": "Chủ nhân: Ba Mỡ (Sếp Nguyễn Tài) và Mẹ Mỡ. Đối tượng phục vụ tối cao: Em bé tên Mỡ (sinh năm 2026, hiện tại 3 tháng tuổi - 3M)."
+    "content": "Chủ nhân: Ba Mỡ (Sếp Nguyễn Tài) và Mẹ Mỡ. Đối tượng phục vụ tối cao: Em bé tên Mỡ (sinh năm 2026, hiện tại 3 tháng tuổi - 3M). Xưng hô: Em/Tiểu Cường - Ba Mỡ/Mẹ Mỡ - Sếp Mỡ/Boss Mỡ."
   },
   {
     "id": 2,
     "createdAt": "2026-10-22T07:49:00.000Z",
-    "topic": "Lịch sử dinh dưỡng & Sữa",
-    "content": "Sếp Mỡ trào ngược dạ dày sinh lý, đờm họng. Sữa cũ Similac Total Comfort gây táo bón và trào ngược. Đã chuyển sang Aptamil Profutura Cesarbiotik Số 1 New Zealand (100% Lactose tự nhiên, GOS/FOS 9:1, lợi khuẩn B. breve M-16V). Pha chuẩn 40°C (không quá 45°C)."
+    "updatedAt": "2026-10-22T09:20:00.000Z",
+    "topic": "Bệnh lý nền & Cơ địa tiêu hóa",
+    "content": "Sếp Mỡ có cơ địa trào ngược dạ dày thực quản sinh lý và họng nhiều đờm nhớt đặc. Sữa cũ (Similac Total Comfort) có đạm quá lỏng và cắt hoàn toàn đường Lactose khiến bé bị táo bón nặng và trào ngược axit làm rát họng, tăng tiết đờm. Hiện đã dừng hẳn Similac và chuyển sang Aptamil Cesarbiotik."
   },
   {
     "id": 3,
     "createdAt": "2026-10-22T07:49:00.000Z",
-    "topic": "Chế độ chăm sóc chuẩn 3 Tháng Tuổi",
-    "content": "Gối chống trào ngược dốc 15 độ chỉ nằm 30-45 phút sau vỗ ợ hơi, cấm nằm ngủ xuyên đêm. Thời gian thức (Wake Window) chỉ 1.5 - 2 tiếng. Lượng sữa: cân nặng x 150ml (120-150ml/cữ). Bổ sung Vitamin D3 400 IU/ngày."
+    "updatedAt": "2026-10-22T09:20:00.000Z",
+    "topic": "Dinh dưỡng & Sữa Aptamil Cesarbiotik 1",
+    "content": "Sữa đang dùng: Aptamil Profutura Cesarbiotik Số 1 (New Zealand, cho bé 0-12 tháng). Chứa 100% Lactose tự nhiên tương thích sữa mẹ, hệ chất xơ GOS/FOS (9:1) giúp mềm phân trị táo bón, lợi khuẩn Bifidobacterium breve M-16V giảm đờm họng. Nhiệt độ nước pha BẮT BUỘC chuẩn 40°C (nước trên 45°C sẽ giết chết lợi khuẩn và vón cục đạm)."
   },
   {
     "id": 4,
     "createdAt": "2026-10-22T07:49:00.000Z",
-    "topic": "Cờ Đỏ cấp cứu (Red Flags)",
-    "content": "Bé 3M sốt ≥ 38.0°C hoặc hạ < 36.0°C; thở ≥ 50 lần/phút hoặc rút lõm ngực; nôn vọt thành vòi liên tục; li bì khó đánh thức, bỏ bú hoàn toàn; thóp phồng căng -> Cảnh báo ba mẹ đưa đi bệnh viện ngay lập tức."
+    "updatedAt": "2026-10-22T09:20:00.000Z",
+    "topic": "Kỹ thuật đổi sữa cho bé 3M",
+    "content": "Quy trình chuyển sữa 3-4 ngày: Pha riêng từng bình (Aptamil riêng, sữa cũ riêng), tuyệt đối không trộn chung 2 loại bột sữa vào cùng 1 bình. Tăng dần từ 1 cữ Aptamil/ngày rồi thay thế hoàn toàn để đường ruột bé làm quen êm ái."
+  },
+  {
+    "id": 5,
+    "createdAt": "2026-10-22T07:49:00.000Z",
+    "updatedAt": "2026-10-22T09:20:00.000Z",
+    "topic": "Tư thế nằm & Gối chống trào ngược dốc 15 độ",
+    "content": "Quy trình sau bú: Bú xong -> Bế vác vỗ ợ hơi 10-15 phút -> Đặt nằm gối dốc 15 độ 30-45 phút -> Chuyển xuống nệm phẳng để ngủ/chơi. TUYỆT ĐỐI CẤM cho bé nằm gối dốc 15 độ 24/24 hoặc ngủ xuyên đêm (gây trượt mông gập cổ làm hẹp đường thở, khò khè nặng hơn và cong vẹo cột sống)."
+  },
+  {
+    "id": 6,
+    "createdAt": "2026-10-22T07:49:00.000Z",
+    "updatedAt": "2026-10-22T09:20:00.000Z",
+    "topic": "Cữ bú, Thức ngủ & Sinh hoạt 3 Tháng Tuổi",
+    "content": "Lượng sữa: Cân nặng (kg) x 150ml/ngày (trung bình 750ml - 900ml/ngày, chia 5-6 cữ, mỗi cữ 120ml - 150ml). Thời gian thức (Wake Window): 1.5 - 2 tiếng/lần (thức quá 2 tiếng dễ bị overtired gắt ngủ). Tummy Time (nằm sấp): 3-4 lần/ngày, mỗi lần 3-5 phút lúc tỉnh táo cách cữ bú 45p. Khủng hoảng tuần 12 (Wonder Week 12) bé dễ biếng ăn sinh lý và bám mẹ."
+  },
+  {
+    "id": 7,
+    "createdAt": "2026-10-22T07:49:00.000Z",
+    "updatedAt": "2026-10-22T09:20:00.000Z",
+    "topic": "Vi chất & Vệ sinh mũi họng hàng ngày",
+    "content": "Vitamin D3 (hoặc D3K2): Bắt buộc bổ sung 400 IU/ngày vào buổi sáng. Vệ sinh mũi họng: Nhỏ nước muối sinh lý 0.9% ngâm ấm khi mũi nghẹt/khô; vỗ rung long đờm nhẹ nhàng trước cữ bú khi bụng đói; không lạm dụng hút mũi mạnh làm tổn thương niêm mạc."
+  },
+  {
+    "id": 8,
+    "createdAt": "2026-10-22T07:49:00.000Z",
+    "updatedAt": "2026-10-22T09:20:00.000Z",
+    "topic": "Bảng Cờ Đỏ cấp cứu (Đi viện ngay)",
+    "content": "Đưa đi viện ngay nếu có bất kỳ dấu hiệu nào sau: Bé 3M sốt ≥ 38.0°C hoặc hạ < 36.0°C; thở lúc nằm yên ≥ 50 lần/phút hoặc rút lõm ngực, thở rên, tím tái; nôn vọt thành vòi liên tục; phân trắng bệch hoặc nhầy máu; li bì khó đánh thức, bỏ bú hoàn toàn; thóp trước phồng căng hoặc co giật."
+  },
+  {
+    "id": 9,
+    "createdAt": "2026-10-22T07:49:00.000Z",
+    "updatedAt": "2026-10-22T09:20:00.000Z",
+    "topic": "Kinh nghiệm mua sắm & Giá chuẩn Con Cưng",
+    "content": "Sữa Aptamil Profutura Cesarbiotik Số 1 tại Con Cưng có 2 quy chuẩn chính hãng: Lon nhỏ 380g giá 346.000đ; Lon lớn 800g giá 764.000đ. Luôn chọn gian hàng Mall/Official để đảm bảo nguồn gốc New Zealand cho Sếp Mỡ."
   }
 ]
