@@ -27,13 +27,13 @@ const agentToolDeclarations = [
   },
   {
     name: 'searchInternet',
-    description: 'Tìm kiếm thông tin, tin tức, giá cả thị trường đồ dùng mẹ và bé, so sánh giá sữa, bỉm trên Internet. Bắt buộc gọi tool này khi cần số liệu thực tế ngoài đời thực hoặc khi người dùng hỏi mua ở đâu, giá bao nhiêu.',
+    description: 'Tìm kiếm trên Google/Internet: Bảng thành phần dinh dưỡng sản phẩm (Nutrition Facts Panel), so sánh thông số kỹ thuật các sản phẩm mẹ và bé (sữa, bỉm, xe đẩy, ghế ăn dặm...), giá cả thị trường, shop chính hãng, và tài liệu y khoa chuẩn (WHO, AAP, BV Nhi Đồng, Vinmec). BẮT BUỘC gọi tool này khi người dùng hỏi so sánh sản phẩm, hỏi thành phần dinh dưỡng, hoặc cần dữ liệu thực tế ngoài đời.',
     parameters: {
       type: Type.OBJECT,
       properties: {
         query: {
           type: Type.STRING,
-          description: 'Từ khóa tìm kiếm trên Internet, ví dụ: "sữa Aptamil Cesarbiotik số 1 Con Cưng giá bao nhiêu"'
+          description: 'Từ khóa tìm kiếm tối ưu trên Google (ví dụ: "bảng thành phần dinh dưỡng Aptamil Profutura Cesarbiotik số 1" hoặc "Similac Total Comfort nutrition facts")'
         }
       },
       required: ['query']
