@@ -27,13 +27,13 @@ const agentToolDeclarations = [
   },
   {
     name: 'searchInternet',
-    description: 'Tìm kiếm trên Google/Internet: Bảng thành phần dinh dưỡng sản phẩm (Nutrition Facts Panel), so sánh thông số kỹ thuật các sản phẩm mẹ và bé (sữa, bỉm, xe đẩy, ghế ăn dặm...), giá cả thị trường, shop chính hãng, và tài liệu y khoa chuẩn (WHO, AAP, BV Nhi Đồng, Vinmec). BẮT BUỘC gọi tool này khi người dùng hỏi so sánh sản phẩm, hỏi thành phần dinh dưỡng, hoặc cần dữ liệu thực tế ngoài đời.',
+    description: 'Tìm kiếm thời gian thực trên Internet/Google: Bảng giá thị trường, link mua hàng chính hãng (Shopee, Con Cưng, KidsPlaza...), kiểm tra mã sản phẩm từ hình ảnh hoặc tên gọi (bình đun nước, máy tiệt trùng, xe đẩy, bỉm sữa...), bảng thành phần dinh dưỡng (Nutrition Facts) và kiến thức y khoa. BẮT BUỘC gọi tool này khi: (1) người dùng hỏi giá, hỏi mua ở đâu, xin link mua hàng; (2) người dùng hỏi có nên mua hay không, có bị đắt/phí hay không; (3) người dùng gửi ảnh sản phẩm cần kiểm tra giá hoặc tính năng; (4) so sánh sản phẩm hoặc cần số liệu thực tế ngoài đời.',
     parameters: {
       type: Type.OBJECT,
       properties: {
         query: {
           type: Type.STRING,
-          description: 'Từ khóa tìm kiếm tối ưu trên Google (ví dụ: "bảng thành phần dinh dưỡng Aptamil Profutura Cesarbiotik số 1" hoặc "Similac Total Comfort nutrition facts")'
+          description: 'Từ khóa tìm kiếm tối ưu trên Google (ví dụ: "giá bình đun nước Fatz Baby FB3830BN Shopee", "bảng thành phần sữa Aptamil Cesarbiotik 1", "link mua bình sữa Hegen chính hãng")'
         }
       },
       required: ['query']
