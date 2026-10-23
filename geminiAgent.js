@@ -169,11 +169,17 @@ function getOrCreateChatSession(sessionKey, displayName, forceReset = false) {
 async function askGeminiAgent(sessionKey, displayName, userPrompt, imageBase64 = null) {
   const chat = getOrCreateChatSession(sessionKey, displayName);
 
+  // Áp dụng Intent-Gated Dynamic Memory: Chỉ nạp sổ tay nếu câu hỏi thực sự liên quan đến bé Mỡ
+  const relevantMemory = memoryStore.getRelevantMemories(userPrompt);
+  const effectivePrompt = relevantMemory
+    ? `${relevantMemory}\n${userPrompt}`
+    : userPrompt;
+
   // Tạo nội dung tin nhắn ban đầu (hỗ trợ text hoặc multimodal có ảnh)
   let initialMessage;
   if (imageBase64) {
     initialMessage = [
-      { text: userPrompt },
+      { text: effectivePrompt },
       {
         inlineData: {
           data: imageBase64,
@@ -182,7 +188,7 @@ async function askGeminiAgent(sessionKey, displayName, userPrompt, imageBase64 =
       }
     ];
   } else {
-    initialMessage = userPrompt;
+    initialMessage = effectivePrompt;
   }
 
   let currentResponse;

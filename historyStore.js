@@ -3,7 +3,8 @@ const path = require('path');
 
 const SUB_HISTORY_FILE = path.join(__dirname, 'data', 'chat_history.json');
 const ROOT_HISTORY_FILE = path.join(__dirname, 'chat_history.json');
-const MAX_MESSAGES_PER_SESSION = 40;
+// Áp dụng kiến trúc Sliding Window chuẩn: Chỉ giữ 8 tin nhắn gần nhất (4 lượt đối thoại) để ngữ cảnh luôn tập trung và sắc bén
+const MAX_MESSAGES_PER_SESSION = 8;
 
 // Tìm đường dẫn file lịch sử khả dụng
 function getHistoryFile() {

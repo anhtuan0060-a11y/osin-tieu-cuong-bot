@@ -148,18 +148,56 @@ TRẢ VỀ KẾT QUẢ DUY NHẤT LÀ 1 ĐOẠN JSON (không thêm markdown ho�
   }
 }
 
-// Định dạng kiến thức để đưa vào System Prompt cho Gemini (Hồ sơ riêng của Sếp Mỡ)
-function formatMemoriesForPrompt() {
+// Kiểm tra câu hỏi của người dùng có thực sự cần đến Sổ tay riêng của bé Mỡ không (Intent Gate)
+function shouldRetrievePersonalMemories(userPrompt = '') {
+  if (!userPrompt || typeof userPrompt !== 'string') return false;
+  const low = userPrompt.toLowerCase();
+  
+  // Các từ khóa kích hoạt hồ sơ riêng của Sếp Mỡ
+  const personalKeywords = [
+    'bé mỡ', 'sếp mỡ', 'boss mỡ', 'con mỡ',
+    'con nhà mình', 'bé nhà mình', 'con tôi', 'con em',
+    'sữa của mỡ', 'cữ bú', 'thói quen của mỡ', 'bệnh của mỡ',
+    'sổ tay', 'dặn dò', 'lưu ý riêng', 'đổi sữa cho mỡ'
+  ];
+  
+  return personalKeywords.some(kw => low.includes(kw));
+}
+
+// Bóc tách mẩu kiến thức liên quan nhất để nạp động vào lượt chat đó (Dynamic In-Context Injection)
+function getRelevantMemories(userPrompt = '') {
+  if (!shouldRetrievePersonalMemories(userPrompt)) {
+    return ''; // CỔNG ĐÓNG 100%: Hoàn toàn không nạp sổ tay nếu câu hỏi là khách quan!
+  }
+
   const memories = loadMemories();
   if (memories.length === 0) return '';
 
-  let text = '\n\n=== [HỒ SƠ BỆNH SỬ & ĐẶC ĐIỂM RIÊNG CỦA SẾP MỠ (CHỈ THAM CHIẾU KHI CÓ LIÊN QUAN)] ===\n' +
-             'QUY TẮC BẤT KHẢ XÂM PHẠM: Đây là hồ sơ cá nhân của bé Mỡ để bạn nắm bối cảnh. TUYỆT ĐỐI KHÔNG HỌC VẸT, KHÔNG TỰ Ý LÔI CÁC THÔNG TIN NÀY RA NÓI nếu câu hỏi của Ba Mẹ không trực tiếp đề cập đến sữa, cữ bú, nhiệt độ pha sữa hay trào ngược của bé. Khi Ba Mẹ hỏi chủ đề khác, hãy trả lời đúng chuyên môn chủ đề đó!\n';
-  memories.forEach((m, idx) => {
-    text += `${idx + 1}. [${m.topic}]: ${m.content}\n`;
+  const low = userPrompt.toLowerCase();
+  let matched = memories.filter(m => {
+    const topic = m.topic.toLowerCase();
+    const content = m.content.toLowerCase();
+    if (low.includes('sữa') && (topic.includes('sữa') || content.includes('sữa'))) return true;
+    if ((low.includes('ngủ') || low.includes('gối') || low.includes('trào ngược')) && (topic.includes('ngủ') || topic.includes('gối') || topic.includes('trào ngược'))) return true;
+    if ((low.includes('bệnh') || low.includes('sốt') || low.includes('cấp cứu')) && (topic.includes('bệnh') || topic.includes('cấp cứu'))) return true;
+    if ((low.includes('cữ') || low.includes('ăn')) && (topic.includes('cữ') || topic.includes('sinh hoạt'))) return true;
+    return false;
   });
-  text += '=====================================================================================\n';
+
+  if (matched.length === 0) {
+    matched = memories.slice(0, 3);
+  }
+
+  let text = '\n[THÔNG TIN HỒ SƠ BÉ MỠ (ĐƯỢC KÍCH HOẠT VÌ CÂU HỎI LIÊN QUAN ĐẾN BÉ)]:\n';
+  matched.forEach((m) => {
+    text += `• [${m.topic}]: ${m.content}\n`;
+  });
   return text;
+}
+
+// Định dạng kiến thức để đưa vào System Prompt cho Gemini (Hồ sơ riêng của Sếp Mỡ)
+function formatMemoriesForPrompt() {
+  return ''; // Không còn nạp cứng toàn bộ vào System Prompt để tránh hiện tượng ngáo / chiếm đoạt ngữ cảnh
 }
 
 // Định dạng danh sách để hiển thị cho người dùng xem trên Telegram (/sotay)
@@ -187,6 +225,8 @@ module.exports = {
   updateMemory,
   deleteMemory,
   checkMemoryConflict,
+  shouldRetrievePersonalMemories,
+  getRelevantMemories,
   formatMemoriesForPrompt,
   formatMemoriesForUser
 };
