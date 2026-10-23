@@ -184,6 +184,28 @@ function getOrCreateChatSession(sessionKey, displayName, forceReset = false) {
   return activeSessions.get(sessionKey);
 }
 
+// Hàm gửi tin nhắn có cơ chế tự động thử lại khi gặp 429 (Rate Limit), 503 (Server Quá Tải) hoặc Socket Timeout
+async function sendChatMessageWithRetry(targetChat, messagePayload, maxRetries = 3) {
+  let attempt = 0;
+  while (attempt <= maxRetries) {
+    try {
+      return await targetChat.sendMessage({ message: messagePayload });
+    } catch (err) {
+      attempt++;
+      const isTemporary = /429|503|RESOURCE_EXHAUSTED|UNAVAILABLE|high demand|fetch failed/i.test(err.message || '');
+      if (isTemporary && attempt <= maxRetries) {
+        const matchSec = (err.message || '').match(/retry in ([\d\.]+)s/i);
+        let waitMs = matchSec ? Math.ceil(parseFloat(matchSec[1]) + 2) * 1000 : attempt * 6000;
+        waitMs = Math.min(waitMs, 45000);
+        console.warn(`⏳ [Gemini API Retry] Lỗi mạng/hạn mức tạm thời, đang đợi ${(waitMs / 1000).toFixed(0)}s thử lại lần ${attempt}/${maxRetries}...`);
+        await new Promise(r => setTimeout(r, waitMs));
+      } else {
+        throw err;
+      }
+    }
+  }
+}
+
 // Vòng lặp Agentic AI xử lý Tool Calls tự động đến khi có câu trả lời cuối cùng
 async function askGeminiAgent(sessionKey, displayName, userPrompt, imageBase64 = null) {
   const chat = getOrCreateChatSession(sessionKey, displayName);
@@ -212,7 +234,7 @@ async function askGeminiAgent(sessionKey, displayName, userPrompt, imageBase64 =
 
   let currentResponse;
   try {
-    currentResponse = await chat.sendMessage({ message: initialMessage });
+    currentResponse = await sendChatMessageWithRetry(chat, initialMessage);
   } catch (err) {
     console.warn('⚠️ Lỗi gọi mô hình chính, đang thử lại với fallback model:', err.message);
     const fallbackChat = ai.chats.create({
@@ -224,7 +246,7 @@ async function askGeminiAgent(sessionKey, displayName, userPrompt, imageBase64 =
       }
     });
     activeSessions.set(sessionKey, fallbackChat);
-    currentResponse = await fallbackChat.sendMessage({ message: initialMessage });
+    currentResponse = await sendChatMessageWithRetry(fallbackChat, initialMessage);
   }
 
   // Vòng lặp giải quyết Tool Calls (tối đa 5 vòng để tránh lặp vô tận)
@@ -247,7 +269,7 @@ async function askGeminiAgent(sessionKey, displayName, userPrompt, imageBase64 =
       })
     );
 
-    currentResponse = await activeChat.sendMessage({ message: functionResponses });
+    currentResponse = await sendChatMessageWithRetry(activeChat, functionResponses);
   }
 
   // Nếu sau các vòng lặp mà Gemini vẫn trả về functionCall (chưa chốt text câu trả lời):
@@ -260,7 +282,7 @@ async function askGeminiAgent(sessionKey, displayName, userPrompt, imageBase64 =
       }
     }));
     try {
-      currentResponse = await activeChat.sendMessage({ message: dummyResponses });
+      currentResponse = await sendChatMessageWithRetry(activeChat, dummyResponses);
     } catch (e) {
       console.warn('⚠️ Lỗi chốt câu trả lời:', e.message);
     }
@@ -274,6 +296,20 @@ async function askGeminiAgent(sessionKey, displayName, userPrompt, imageBase64 =
       .map(p => p.text)
       .join('\n')
       .trim();
+  }
+
+  // Cứu cánh khẩn cấp: Nếu vòng lặp tool vẫn chưa trả về text, gọi thẳng generateContent để tổng hợp câu trả lời
+  if (!finalText) {
+    try {
+      console.log('⚡ Kích hoạt cứu cánh GenerateContent trực tiếp để trả lời cho Sếp...');
+      const emergencyRes = await ai.models.generateContent({
+        model: PRIMARY_MODEL,
+        contents: `Người dùng hỏi: "${effectivePrompt}". Hãy tổng hợp câu trả lời chi tiết, chính xác, lịch sự và chu đáo nhất cho Sếp ngay.`
+      });
+      finalText = emergencyRes.text?.trim();
+    } catch (e) {
+      console.warn('⚠️ Cứu cánh thất bại:', e.message);
+    }
   }
 
   const finalReply = finalText || 'Dạ Ba Mỡ ơi, Tiểu Cường đang tra cứu thông tin này nhưng mạng bên ngoài phản hồi hơi chậm, Ba Mỡ đợi em một chút rồi hỏi lại giúp em nhé! 🙏';
