@@ -6,8 +6,8 @@ const memoryStore = require('./memoryStore');
 const webTools = require('./webSearch');
 
 const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
-const PRIMARY_MODEL = 'gemini-3-flash-preview';
-const FALLBACK_MODEL = 'gemini-flash-lite-latest';
+const PRIMARY_MODEL = 'gemini-flash-lite-latest';
+const FALLBACK_MODEL = 'gemini-flash-latest';
 
 // Khai báo bộ công cụ (Tools) cho Gemini Function Calling
 const agentToolDeclarations = [
@@ -155,6 +155,7 @@ function getOrCreateChatSession(sessionKey, displayName, forceReset = false) {
       history: history.length > 0 ? history : undefined,
       config: {
         systemInstruction: fullSystemPrompt,
+        temperature: 0.7,
         tools: [{ functionDeclarations: agentToolDeclarations }]
       }
     });
@@ -193,6 +194,7 @@ async function askGeminiAgent(sessionKey, displayName, userPrompt, imageBase64 =
       model: FALLBACK_MODEL,
       config: {
         systemInstruction: buildSystemPrompt(displayName),
+        temperature: 0.7,
         tools: [{ functionDeclarations: agentToolDeclarations }]
       }
     });

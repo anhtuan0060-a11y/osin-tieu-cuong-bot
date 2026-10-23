@@ -148,16 +148,17 @@ TRẢ VỀ KẾT QUẢ DUY NHẤT LÀ 1 ĐOẠN JSON (không thêm markdown ho�
   }
 }
 
-// Định dạng kiến thức để đưa vào System Prompt cho Gemini
+// Định dạng kiến thức để đưa vào System Prompt cho Gemini (Hồ sơ riêng của Sếp Mỡ)
 function formatMemoriesForPrompt() {
   const memories = loadMemories();
   if (memories.length === 0) return '';
 
-  let text = '\n\n=== [SỔ TAY KIẾN THỨC VĨNH VIỄN BẠN ĐÃ ĐƯỢC DẠY (BẮT BUỘC TUÂN THỦ)] ===\n';
+  let text = '\n\n=== [HỒ SƠ BỆNH SỬ & ĐẶC ĐIỂM RIÊNG CỦA SẾP MỠ (CHỈ THAM CHIẾU KHI CÓ LIÊN QUAN)] ===\n' +
+             'QUY TẮC BẤT KHẢ XÂM PHẠM: Đây là hồ sơ cá nhân của bé Mỡ để bạn nắm bối cảnh. TUYỆT ĐỐI KHÔNG HỌC VẸT, KHÔNG TỰ Ý LÔI CÁC THÔNG TIN NÀY RA NÓI nếu câu hỏi của Ba Mẹ không trực tiếp đề cập đến sữa, cữ bú, nhiệt độ pha sữa hay trào ngược của bé. Khi Ba Mẹ hỏi chủ đề khác, hãy trả lời đúng chuyên môn chủ đề đó!\n';
   memories.forEach((m, idx) => {
     text += `${idx + 1}. [${m.topic}]: ${m.content}\n`;
   });
-  text += '=========================================================================\n';
+  text += '=====================================================================================\n';
   return text;
 }
 
