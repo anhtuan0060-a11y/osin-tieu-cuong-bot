@@ -435,18 +435,62 @@ bot.on('message:text', async (ctx) => {
   }
 });
 
-// Bắt lỗi toàn cục của Bot để không bao giờ dừng đột ngột
+// Bắt lỗi toàn cục của Bot để không bao giờ dừng đột ngột khi xử lý tin nhắn
 bot.catch((err) => {
   console.error('⚠️ Lỗi Grammy Bot:', err.error || err);
 });
 
-function startBot() {
+// Xử lý đóng kết nối êm ái khi Render cập nhật phiên bản mới (Zero-Downtime Graceful Handover)
+let isShuttingDown = false;
+const gracefulShutdown = async (signal) => {
+  if (isShuttingDown) return;
+  isShuttingDown = true;
+  console.log(`🛑 [Graceful Shutdown] Nhận tín hiệu ${signal}. Đang đóng kết nối Telegram để bàn giao cho phiên bản mới...`);
+  try {
+    await bot.stop();
+    console.log('✅ [Graceful Shutdown] Đã ngắt kết nối Telegram an toàn.');
+  } catch (err) {
+    console.warn('⚠️ Lỗi khi dừng bot:', err.message);
+  }
+  process.exit(0);
+};
+
+process.once('SIGINT', () => gracefulShutdown('SIGINT'));
+process.once('SIGTERM', () => gracefulShutdown('SIGTERM'));
+
+async function startBot(maxRetries = 10, retryDelayMs = 4000) {
   console.log('--------------------------------------------------');
-  console.log('🤖 OSIN TIỂU CƯỜNG (@Osin_Tieu_Cuong_Bot) ĐANG CHẠY...');
+  console.log('🤖 OSIN TIỂU CƯỜNG (@Osin_Tieu_Cuong_Bot) ĐANG KHỞI CHẠY...');
   console.log('🧠 KIẾN TRÚC AGENTIC AI (GEMINI NATIVE TOOLS): ĐÃ KÍCH HOẠT');
   console.log(`🌐 PORT HEALTH CHECK: ${config.PORT}`);
   console.log('--------------------------------------------------');
-  bot.start();
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      console.log(`🚀 [Telegram Bot] Đang kết nối Telegram API (Lần thử ${attempt}/${maxRetries})...`);
+      await bot.start({
+        drop_pending_updates: false,
+        onStart: (botInfo) => {
+          console.log(`✅ [Telegram Bot] @${botInfo.username} đã kết nối thành công 24/7!`);
+        }
+      });
+      break; // Bot dừng bình thường nếu có lệnh ngắt
+    } catch (err) {
+      const isConflict = err.error_code === 409 ||
+        (err.message && (err.message.includes('409') || err.message.includes('Conflict') || err.message.includes('other getUpdates')));
+
+      if (isConflict && attempt < maxRetries) {
+        console.warn(`⚠️ [409 Conflict] Phiên bản cũ đang bàn giao kết nối Telegram. Đang đợi ${retryDelayMs / 1000}s để tiếp quản (Lần ${attempt}/${maxRetries})...`);
+        await new Promise((res) => setTimeout(res, retryDelayMs));
+      } else if (attempt < maxRetries) {
+        console.warn(`⚠️ [Telegram Connect Error] ${err.message}. Đang thử lại sau ${retryDelayMs / 1000}s...`);
+        await new Promise((res) => setTimeout(res, retryDelayMs));
+      } else {
+        console.error('❌ [Telegram Bot] Không thể kết nối Telegram sau nhiều lần thử:', err);
+        process.exit(1);
+      }
+    }
+  }
 }
 
 module.exports = {
