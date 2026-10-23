@@ -145,7 +145,26 @@ async function executeToolCall(toolName, args) {
 // Quản lý các phiên Chat đa lượt (Multi-turn Sessions)
 const activeSessions = new Map();
 
+// Đăng ký listener: Khi historyStore hoàn thành nén ngữ cảnh ngầm, tự động reset session RAM
+historyStore.setOnCompressionComplete((sessionKey) => {
+  console.log(`🔄 [Context Sync] Session ${sessionKey} đã hoàn thành nén ngữ cảnh cũ, làm mới phiên RAM...`);
+  resetChatSession(sessionKey);
+});
+
 function getOrCreateChatSession(sessionKey, displayName, forceReset = false) {
+  if (!forceReset && activeSessions.has(sessionKey)) {
+    const existingChat = activeSessions.get(sessionKey);
+    try {
+      const liveHistory = existingChat.getHistory();
+      if (Array.isArray(liveHistory) && liveHistory.length > 42) {
+        console.log(`🔄 [Context Sync] Phiên RAM ${sessionKey} vượt ngưỡng 20 lượt chat (${liveHistory.length} tin nhắn), đồng bộ làm mới từ lịch sử nén...`);
+        activeSessions.delete(sessionKey);
+      }
+    } catch (e) {
+      // Bỏ qua nếu không đọc được liveHistory
+    }
+  }
+
   if (forceReset || !activeSessions.has(sessionKey)) {
     const fullSystemPrompt = buildSystemPrompt(displayName);
     const history = forceReset ? [] : historyStore.getSessionHistoryForGemini(sessionKey);
@@ -208,11 +227,11 @@ async function askGeminiAgent(sessionKey, displayName, userPrompt, imageBase64 =
     currentResponse = await fallbackChat.sendMessage({ message: initialMessage });
   }
 
-  // Vòng lặp giải quyết Tool Calls (tối đa 4 vòng để tránh lặp vô tận)
+  // Vòng lặp giải quyết Tool Calls (tối đa 5 vòng để tránh lặp vô tận)
   let loopCount = 0;
   const activeChat = activeSessions.get(sessionKey);
 
-  while (currentResponse.functionCalls && currentResponse.functionCalls.length > 0 && loopCount < 4) {
+  while (currentResponse.functionCalls && currentResponse.functionCalls.length > 0 && loopCount < 5) {
     loopCount++;
     console.log(`🔄 [Agent Loop Turn ${loopCount}] Nhận ${currentResponse.functionCalls.length} yêu cầu gọi Tool từ Gemini...`);
 
@@ -231,7 +250,33 @@ async function askGeminiAgent(sessionKey, displayName, userPrompt, imageBase64 =
     currentResponse = await activeChat.sendMessage({ message: functionResponses });
   }
 
-  const finalReply = currentResponse.text || 'Dạ, Tiểu Cường đã ghi nhận ý kiến của Sếp!';
+  // Nếu sau các vòng lặp mà Gemini vẫn trả về functionCall (chưa chốt text câu trả lời):
+  if (!currentResponse.text && currentResponse.functionCalls && currentResponse.functionCalls.length > 0) {
+    console.log('⚡ Model vẫn muốn gọi thêm tool, gửi phản hồi chốt câu trả lời cuối cùng cho người dùng...');
+    const dummyResponses = currentResponse.functionCalls.map(c => ({
+      functionResponse: {
+        name: c.name,
+        response: { status: 'complete', message: 'Dữ liệu đã đủ. Hãy tổng hợp câu trả lời chi tiết, chính xác và đầy đủ nhất cho Ba Mỡ ngay.' }
+      }
+    }));
+    try {
+      currentResponse = await activeChat.sendMessage({ message: dummyResponses });
+    } catch (e) {
+      console.warn('⚠️ Lỗi chốt câu trả lời:', e.message);
+    }
+  }
+
+  // Trích xuất text từ response (hỗ trợ cả getter .text và candidates parts)
+  let finalText = currentResponse.text;
+  if (!finalText && currentResponse.candidates?.[0]?.content?.parts) {
+    finalText = currentResponse.candidates[0].content.parts
+      .filter(p => p.text)
+      .map(p => p.text)
+      .join('\n')
+      .trim();
+  }
+
+  const finalReply = finalText || 'Dạ Ba Mỡ ơi, Tiểu Cường đang tra cứu thông tin này nhưng mạng bên ngoài phản hồi hơi chậm, Ba Mỡ đợi em một chút rồi hỏi lại giúp em nhé! 🙏';
   return finalReply;
 }
 
