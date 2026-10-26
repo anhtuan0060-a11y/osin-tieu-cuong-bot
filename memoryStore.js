@@ -1,33 +1,21 @@
 const fs = require('fs');
 const path = require('path');
 
-const SUB_MEMORY_FILE = path.join(__dirname, 'data', 'memory.json');
-const ROOT_MEMORY_FILE = path.join(__dirname, 'memory.json');
+const MEMORY_FILE = path.join(__dirname, 'memory.json');
 
-// Tìm đường dẫn file bộ nhớ khả dụng nhất (hỗ trợ cả Render khi file ở root hoặc ở data/)
+// Trả về đường dẫn file bộ nhớ duy nhất ở thư mục gốc
 function getPrimaryMemoryFile() {
-  if (fs.existsSync(SUB_MEMORY_FILE)) return SUB_MEMORY_FILE;
-  if (fs.existsSync(ROOT_MEMORY_FILE)) return ROOT_MEMORY_FILE;
-  return SUB_MEMORY_FILE;
+  return MEMORY_FILE;
 }
 
 // Đọc danh sách kiến thức từ đĩa
 function loadMemories() {
   try {
-    let target = getPrimaryMemoryFile();
-    if (!fs.existsSync(target)) {
-      if (fs.existsSync(ROOT_MEMORY_FILE)) target = ROOT_MEMORY_FILE;
-      else if (fs.existsSync(SUB_MEMORY_FILE)) target = SUB_MEMORY_FILE;
-      else {
-        const dataDir = path.join(__dirname, 'data');
-        if (!fs.existsSync(dataDir)) {
-          fs.mkdirSync(dataDir, { recursive: true });
-        }
-        fs.writeFileSync(SUB_MEMORY_FILE, '[]', 'utf8');
-        return [];
-      }
+    if (!fs.existsSync(MEMORY_FILE)) {
+      fs.writeFileSync(MEMORY_FILE, '[]', 'utf8');
+      return [];
     }
-    const raw = fs.readFileSync(target, 'utf8');
+    const raw = fs.readFileSync(MEMORY_FILE, 'utf8');
     const data = JSON.parse(raw);
     return Array.isArray(data) ? data : [];
   } catch (err) {
@@ -36,29 +24,11 @@ function loadMemories() {
   }
 }
 
-// Lưu danh sách kiến thức đồng bộ vào CẢ HAI nơi để Render và Git không bao giờ lệch
+// Lưu danh sách kiến thức vào duy nhất 1 file memory.json ở thư mục gốc
 function saveMemories(memories) {
   try {
     const jsonStr = JSON.stringify(memories, null, 2);
-
-    // 1. Lưu vào thư mục con data/memory.json
-    try {
-      const dataDir = path.join(__dirname, 'data');
-      if (!fs.existsSync(dataDir)) {
-        fs.mkdirSync(dataDir, { recursive: true });
-      }
-      fs.writeFileSync(SUB_MEMORY_FILE, jsonStr, 'utf8');
-    } catch (e1) {
-      console.warn('⚠️ Lỗi ghi data/memory.json:', e1.message);
-    }
-
-    // 2. Lưu vào thư mục gốc ./memory.json
-    try {
-      fs.writeFileSync(ROOT_MEMORY_FILE, jsonStr, 'utf8');
-    } catch (e2) {
-      console.warn('⚠️ Lỗi ghi ./memory.json:', e2.message);
-    }
-
+    fs.writeFileSync(MEMORY_FILE, jsonStr, 'utf8');
     return true;
   } catch (err) {
     console.error('❌ Lỗi ghi file memory.json:', err.message);
@@ -200,6 +170,27 @@ function formatMemoriesForPrompt() {
   return ''; // Không còn nạp cứng toàn bộ vào System Prompt để tránh hiện tượng ngáo / chiếm đoạt ngữ cảnh
 }
 
+// Trích xuất các quy tắc ứng xử, thói quen riêng do Sếp dặn để nạp vào System Prompt toàn cục (áp dụng cho cả Nhóm và Chat riêng)
+function getBehavioralRules() {
+  const memories = loadMemories();
+  if (!Array.isArray(memories) || memories.length === 0) return '';
+
+  const ruleTopicRegex = /thói quen|quy tắc|ứng xử|dặn dò|lưu ý|hành vi|phục vụ/i;
+  const ruleContentRegex = /không tự|tuyệt đối|khi nào|chưa được yêu cầu|xưng hô|quy tắc|phân tích ảnh|chỉ dạ thưa/i;
+
+  const behavioral = memories.filter(m => 
+    ruleTopicRegex.test(m.topic || '') || ruleContentRegex.test(m.content || '')
+  );
+
+  if (behavioral.length === 0) return '';
+
+  let text = '\n## MODULE QUY TẮC ỨNG XỬ & THÓI QUEN RIÊNG DO SẾP DẶN (ÁP DỤNG BẮT BUỘC MỌI PHIÊN CHAT CẢ NHÓM VÀ RIÊNG):\n';
+  behavioral.forEach(b => {
+    text += `- [${b.topic}]: ${b.content}\n`;
+  });
+  return text;
+}
+
 // Định dạng danh sách để hiển thị cho người dùng xem trên Telegram (/sotay)
 function formatMemoriesForUser() {
   const memories = loadMemories();
@@ -227,6 +218,7 @@ module.exports = {
   checkMemoryConflict,
   shouldRetrievePersonalMemories,
   getRelevantMemories,
+  getBehavioralRules,
   formatMemoriesForPrompt,
   formatMemoriesForUser
 };

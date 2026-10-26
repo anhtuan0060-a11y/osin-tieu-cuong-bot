@@ -320,9 +320,16 @@ function resetChatSession(sessionKey) {
   activeSessions.delete(sessionKey);
 }
 
+function resetAllChatSessions() {
+  const count = activeSessions.size;
+  activeSessions.clear();
+  console.log(`🧹 [Global Session Reset] Đã làm mới toàn bộ ${count} phiên chat trên RAM (cả nhóm và chat riêng).`);
+}
+
 module.exports = {
   ai,
   askGeminiAgent,
   getOrCreateChatSession,
-  resetChatSession
+  resetChatSession,
+  resetAllChatSessions
 };

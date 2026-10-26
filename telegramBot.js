@@ -4,7 +4,7 @@ const config = require('./config');
 const memoryStore = require('./memoryStore');
 const historyStore = require('./historyStore');
 const { extractQuotedMessage } = require('./quoteReader');
-const { ai, askGeminiAgent, getOrCreateChatSession, resetChatSession } = require('./geminiAgent');
+const { ai, askGeminiAgent, getOrCreateChatSession, resetChatSession, resetAllChatSessions } = require('./geminiAgent');
 
 // Khởi tạo Grammy Bot (Tự động chuyển đổi Cloud / Local)
 const botConfig = config.isCloud
@@ -86,7 +86,7 @@ async function handleTeachKnowledge(ctx, sessionKey, userName, knowledge) {
 
     const topic = check.suggestedTopic || 'Kiến thức Sếp dạy';
     const added = memoryStore.addMemory(knowledge, topic);
-    resetChatSession(sessionKey);
+    resetAllChatSessions();
     console.log(`🧠 Đã lưu kiến thức mới #${added.id} [${added.topic}]: "${added.content}"`);
 
     historyStore.appendChatTurn(sessionKey, 'user', `[Dạy kiến thức]: ${knowledge}`);
@@ -102,7 +102,7 @@ async function handleTeachKnowledge(ctx, sessionKey, userName, knowledge) {
     clearInterval(typingInterval);
     console.error('❌ Lỗi khi học kiến thức mới:', err);
     const added = memoryStore.addMemory(knowledge, 'Kiến thức Sếp dạy');
-    resetChatSession(sessionKey);
+    resetAllChatSessions();
     historyStore.appendChatTurn(sessionKey, 'user', `[Dạy kiến thức]: ${knowledge}`);
     historyStore.appendChatTurn(sessionKey, 'model', `🧠 Dạ, Tiểu Cường đã ghi nhận vào sổ tay mục #${added.id}: "${added.content}"`);
     return await ctx.reply(
@@ -165,7 +165,7 @@ bot.command('thaythe', async (ctx) => {
   const pending = pendingConflicts.get(sessionKey);
   const updated = memoryStore.updateMemory(pending.conflictId, pending.newKnowledge, pending.topic);
   pendingConflicts.delete(sessionKey);
-  resetChatSession(sessionKey);
+  resetAllChatSessions();
   historyStore.appendChatTurn(sessionKey, 'user', 'Thay thế điều cũ bằng điều mới');
   historyStore.appendChatTurn(sessionKey, 'model', `Đã thay thế thành công mục #${pending.conflictId}: "${updated.content}"`);
   await ctx.reply(`✅ **Dạ, Tiểu Cường đã THAY THẾ thành công mục #${pending.conflictId}!**\n\n📌 **Nội dung mới:** "${updated.content}"\n\nSổ tay đã được làm mới chuẩn chỉnh rồi nha Ba Mỡ! 🥰`, { parse_mode: 'Markdown' });
@@ -178,7 +178,7 @@ bot.command('giucahai', async (ctx) => {
   const pending = pendingConflicts.get(sessionKey);
   const added = memoryStore.addMemory(pending.newKnowledge, pending.topic);
   pendingConflicts.delete(sessionKey);
-  resetChatSession(sessionKey);
+  resetAllChatSessions();
   historyStore.appendChatTurn(sessionKey, 'user', 'Giữ cả hai điều');
   historyStore.appendChatTurn(sessionKey, 'model', `Đã lưu thêm mục mới #${added.id}: "${added.content}"`);
   await ctx.reply(`✅ **Dạ, Tiểu Cường đã lưu thêm thành mục mới #${added.id} [${added.topic}] song song với mục cũ ạ!**`, { parse_mode: 'Markdown' });
@@ -215,8 +215,7 @@ bot.command('forget', async (ctx) => {
 
   const ok = memoryStore.deleteMemory(id);
   if (ok) {
-    const sessionKey = getSessionKey(ctx);
-    resetChatSession(sessionKey);
+    resetAllChatSessions();
     await ctx.reply(`🗑️ Dạ, Tiểu Cường đã xóa mục #${id} khỏi sổ tay ghi nhớ rồi ạ!`);
   } else {
     await ctx.reply(`❌ Không tìm thấy mục mang mã số #${id} trong sổ tay Sếp ơi!`);
@@ -265,13 +264,14 @@ bot.on(':photo', async (ctx) => {
   const isMentioned = caption.toLowerCase().includes(`@${botUsername.toLowerCase()}`);
   const isReplyToBot = ctx.message.reply_to_message?.from?.id === ctx.me.id;
 
-  if (isGroup && !isMentioned && !isReplyToBot && caption) {
+  // Trong nhóm: Bắt buộc phải tag @bot hoặc reply tin nhắn của bot. Nếu không, im lặng 100%
+  if (isGroup && !isMentioned && !isReplyToBot) {
     return;
   }
 
   const sessionKey = getSessionKey(ctx);
   const userName = ctx.from.first_name || 'Sếp';
-  const cleanCaption = caption.replace(new RegExp(`@${botUsername}`, 'gi'), '').trim() || 'Hãy phân tích chi tiết hình ảnh này giúp tôi.';
+  const cleanCaption = caption.replace(new RegExp(`@${botUsername}`, 'gi'), '').trim();
 
   let typingInterval = setInterval(() => {
     ctx.replyWithChatAction('typing').catch(() => {});
@@ -288,7 +288,17 @@ bot.on(':photo', async (ctx) => {
 
     const displayName = isGroup ? `Gia đình Sếp Mỡ (${ctx.chat.title || 'Nhóm'})` : userName;
     const quotePrefix = extractQuotedMessage(ctx);
-    const senderPrompt = isGroup ? `[${userName} vừa gửi 1 tấm ảnh kèm chú thích]: ${cleanCaption}` : cleanCaption;
+
+    // Xây dựng prompt: TUYỆT ĐỐI KHÔNG tự tiện gán lệnh phân tích chi tiết nếu người dùng không yêu cầu!
+    let senderPrompt;
+    if (cleanCaption) {
+      senderPrompt = isGroup ? `[${userName} gửi 1 ảnh kèm yêu cầu]: ${cleanCaption}` : cleanCaption;
+    } else {
+      senderPrompt = isGroup
+        ? `[${userName} vừa gửi 1 bức ảnh (KHÔNG CÓ YÊU CẦU PHÂN TÍCH CHI TIẾT)]`
+        : `[Người dùng vừa gửi 1 bức ảnh (KHÔNG CÓ YÊU CẦU PHÂN TÍCH CHI TIẾT)]`;
+    }
+
     const finalPhotoPrompt = `${quotePrefix}${senderPrompt}`;
 
     const replyText = await askGeminiAgent(sessionKey, displayName, finalPhotoPrompt, base64Data);
@@ -303,8 +313,8 @@ bot.on(':photo', async (ctx) => {
 
   } catch (err) {
     clearInterval(typingInterval);
-    console.error('❌ Lỗi xử lý ảnh:', err);
-    await ctx.reply('Úi Sếp ơi, mắt em hôm nay hơi quáng gà nên chưa đọc được tấm ảnh này, Sếp gửi lại giúp em với nhé! 🥺');
+    console.error('❌ Lỗi xử lý hình ảnh:', err.message);
+    await ctx.reply('Dạ Ba Mỡ ơi, em gặp chút trục trặc khi tải ảnh từ máy chủ Telegram rồi ạ, Ba Mỡ gửi lại giúp em nhé! 🙇‍♂️');
   }
 });
 
@@ -338,7 +348,7 @@ bot.on('message:text', async (ctx) => {
     if (low === 'thay thế' || low === 'thay the' || low === 'đồng ý thay thế' || low === 'dong y thay the') {
       const updated = memoryStore.updateMemory(pending.conflictId, pending.newKnowledge, pending.topic);
       pendingConflicts.delete(sessionKey);
-      resetChatSession(sessionKey);
+      resetAllChatSessions();
       return await ctx.reply(
         `✅ **Dạ, Tiểu Cường đã THAY THẾ thành công mục #${pending.conflictId}!**\n\n` +
         `📌 **Nội dung mới:** "${updated.content}"\n\n` +
@@ -350,7 +360,7 @@ bot.on('message:text', async (ctx) => {
     if (low === 'giữ cả hai' || low === 'giu ca hai' || low === 'lưu cả hai') {
       const added = memoryStore.addMemory(pending.newKnowledge, pending.topic);
       pendingConflicts.delete(sessionKey);
-      resetChatSession(sessionKey);
+      resetAllChatSessions();
       return await ctx.reply(
         `✅ **Dạ, Tiểu Cường đã lưu thêm thành mục mới #${added.id} [${added.topic}]!**\n\n` +
         `📌 **Mục mới:** "${added.content}"\n` +

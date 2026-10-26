@@ -5,8 +5,7 @@ const { GEMINI_API_KEY } = require('./config');
 
 const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
 
-const SUB_HISTORY_FILE = path.join(__dirname, 'data', 'chat_history.json');
-const ROOT_HISTORY_FILE = path.join(__dirname, 'chat_history.json');
+const HISTORY_FILE = path.join(__dirname, 'chat_history.json');
 
 // CẤU HÌNH CỬA SỔ BỘ NHỚ HỘI THOẠI (CONTEXT WINDOW ARCHITECTURE)
 // 1. Lưu 20 lượt chat gần nhất = 40 tin nhắn (20 user + 20 model) nguyên văn 100%
@@ -19,25 +18,13 @@ const COMPRESSION_BATCH_SIZE = 10;
 // 4. Giới hạn cứng phòng ngừa sự cố tràn bộ nhớ khi mất mạng API
 const MAX_MESSAGES_HARD_LIMIT = 60;
 
-// Tìm đường dẫn file lịch sử khả dụng
-function getHistoryFile() {
-  if (fs.existsSync(SUB_HISTORY_FILE)) return SUB_HISTORY_FILE;
-  if (fs.existsSync(ROOT_HISTORY_FILE)) return ROOT_HISTORY_FILE;
-  return SUB_HISTORY_FILE;
-}
-
-// Đọc toàn bộ lịch sử từ đĩa
+// Đọc toàn bộ lịch sử từ đĩa (duy nhất 1 file chat_history.json ở thư mục gốc)
 function loadAllHistories() {
   try {
-    let target = getHistoryFile();
-    if (!fs.existsSync(target)) {
-      if (fs.existsSync(ROOT_HISTORY_FILE)) target = ROOT_HISTORY_FILE;
-      else if (fs.existsSync(SUB_HISTORY_FILE)) target = SUB_HISTORY_FILE;
-      else {
-        return {};
-      }
+    if (!fs.existsSync(HISTORY_FILE)) {
+      return {};
     }
-    const raw = fs.readFileSync(target, 'utf8');
+    const raw = fs.readFileSync(HISTORY_FILE, 'utf8');
     const data = JSON.parse(raw);
     return typeof data === 'object' && data !== null ? data : {};
   } catch (err) {
@@ -46,29 +33,11 @@ function loadAllHistories() {
   }
 }
 
-// Lưu đồng bộ lịch sử vào cả 2 file (data/chat_history.json và ./chat_history.json)
+// Lưu lịch sử vào duy nhất 1 file chat_history.json ở thư mục gốc
 function saveAllHistories(allHistories) {
   try {
     const jsonStr = JSON.stringify(allHistories, null, 2);
-
-    // 1. Ghi vào data/chat_history.json
-    try {
-      const dataDir = path.join(__dirname, 'data');
-      if (!fs.existsSync(dataDir)) {
-        fs.mkdirSync(dataDir, { recursive: true });
-      }
-      fs.writeFileSync(SUB_HISTORY_FILE, jsonStr, 'utf8');
-    } catch (e1) {
-      console.warn('⚠️ Lỗi ghi data/chat_history.json:', e1.message);
-    }
-
-    // 2. Ghi vào ./chat_history.json
-    try {
-      fs.writeFileSync(ROOT_HISTORY_FILE, jsonStr, 'utf8');
-    } catch (e2) {
-      console.warn('⚠️ Lỗi ghi ./chat_history.json:', e2.message);
-    }
-
+    fs.writeFileSync(HISTORY_FILE, jsonStr, 'utf8');
     return true;
   } catch (err) {
     console.warn('⚠️ Lỗi lưu chat_history.json:', err.message);
