@@ -1,3 +1,5 @@
+const fs = require('fs');
+const path = require('path');
 const { Bot, InputFile } = require('grammy');
 const fetch = require('node-fetch');
 const config = require('./config');
@@ -5,6 +7,66 @@ const memoryStore = require('./memoryStore');
 const historyStore = require('./historyStore');
 const { extractQuotedMessage } = require('./quoteReader');
 const { ai, askGeminiAgent, getOrCreateChatSession, resetChatSession, resetAllChatSessions } = require('./geminiAgent');
+
+// Đường dẫn file lưu danh bạ các nhóm Telegram mà bot đang tham gia
+const GROUPS_FILE = path.join(__dirname, 'groups.json');
+
+// Đọc danh sách các nhóm đã biết từ đĩa
+function loadKnownGroups() {
+  try {
+    if (!fs.existsSync(GROUPS_FILE)) {
+      return {};
+    }
+    const raw = fs.readFileSync(GROUPS_FILE, 'utf8');
+    const data = JSON.parse(raw);
+    return typeof data === 'object' && data !== null ? data : {};
+  } catch (err) {
+    console.warn('⚠️ Lỗi đọc groups.json:', err.message);
+    return {};
+  }
+}
+
+// Lưu danh sách các nhóm vào đĩa
+function saveKnownGroups(groups) {
+  try {
+    fs.writeFileSync(GROUPS_FILE, JSON.stringify(groups, null, 2), 'utf8');
+    return true;
+  } catch (err) {
+    console.warn('⚠️ Lỗi ghi groups.json:', err.message);
+    return false;
+  }
+}
+
+// Ghi nhận / cập nhật nhóm vào danh bạ
+function trackGroup(chat, memberCount = null) {
+  if (!chat || (chat.type !== 'group' && chat.type !== 'supergroup')) return;
+  const groups = loadKnownGroups();
+  const existing = groups[chat.id] || {};
+  groups[chat.id] = {
+    id: chat.id,
+    title: chat.title || existing.title || 'Nhóm không tên',
+    type: chat.type,
+    memberCount: memberCount !== null ? memberCount : (existing.memberCount || null),
+    lastActive: new Date().toISOString()
+  };
+  saveKnownGroups(groups);
+}
+
+// Xóa nhóm khi bot bị kick hoặc rời nhóm
+function removeKnownGroup(chatId) {
+  const groups = loadKnownGroups();
+  if (groups[chatId]) {
+    delete groups[chatId];
+    saveKnownGroups(groups);
+    console.log(`🗑️ [Group Registry] Đã xóa nhóm ID ${chatId} khỏi danh bạ.`);
+  }
+}
+
+// Lấy danh sách nhóm dạng mảng
+function getKnownGroupsList() {
+  const groups = loadKnownGroups();
+  return Object.values(groups);
+}
 
 // Khởi tạo Grammy Bot (Tự động chuyển đổi Cloud / Local)
 const botConfig = config.isCloud
@@ -298,6 +360,7 @@ bot.command('help', async (ctx) => {
    • Xem những gì bot đã nhớ: \`/sotay\`
    • Tải file sao lưu về máy: \`/backup\`
    • Xóa điều đã nhớ: \`/forget [mã số]\`
+   • Xem danh sách nhóm bot tham gia: \`/groups\` hoặc \`/nhom\`
 
 2. **Soi link mua hàng & Tra giá tự động (Agentic Tools):**
    • Cứ gửi link Shopee, Con Cưng, KidsPlaza hoặc hỏi giá bất kỳ, bot tự động kích hoạt Tool đọc web và cào giá chuẩn đét!
@@ -313,10 +376,57 @@ Chúc Ba Mẹ có những trải nghiệm thật tuyệt vời! 🚀`;
   await ctx.reply(helpText, { parse_mode: 'Markdown' });
 });
 
+// 10.1 Lệnh /groups hoặc /nhom: Xem danh sách các nhóm bot đang tham gia
+bot.command(['groups', 'nhom'], async (ctx) => {
+  const groups = getKnownGroupsList();
+  if (groups.length === 0) {
+    return await ctx.reply('📭 Hiện tại Tiểu Cường chưa ghi nhận nhóm nào trong danh bạ. Ba Mỡ hãy thêm em vào nhóm gia đình và nhắn 1 câu để em đồng bộ nhé!');
+  }
+  let msg = '👥 **DANH SÁCH NHÓM TELEGRAM TIỂU CƯỜNG ĐANG TÚC TRỰC:**\n\n';
+  for (const g of groups) {
+    let count = g.memberCount;
+    if (typeof bot.api.getChatMemberCount === 'function') {
+      try {
+        count = await bot.api.getChatMemberCount(g.id);
+      } catch (e) {}
+    }
+    msg += `• **${g.title}** (ID: \`${g.id}\`): ${count ? `${count} thành viên` : 'Đang hoạt động'}\n`;
+  }
+  await ctx.reply(msg, { parse_mode: 'Markdown' });
+});
+
+// Lắng nghe sự kiện thêm/gỡ bot khỏi nhóm (Telegram my_chat_member update)
+bot.on('my_chat_member', async (ctx) => {
+  try {
+    const chat = ctx.myChatMember.chat;
+    const newStatus = ctx.myChatMember.new_chat_member.status;
+    console.log(`📢 [Event my_chat_member] Nhóm "${chat.title}" (${chat.id}) - Trạng thái: ${newStatus}`);
+    if (chat.type === 'group' || chat.type === 'supergroup') {
+      if (newStatus === 'member' || newStatus === 'administrator') {
+        let count = null;
+        try {
+          count = await ctx.getChatMemberCount();
+        } catch (e) {}
+        trackGroup(chat, count);
+      } else if (newStatus === 'left' || newStatus === 'kicked') {
+        removeKnownGroup(chat.id);
+      }
+    }
+  } catch (err) {
+    console.warn('⚠️ Lỗi xử lý my_chat_member:', err.message);
+  }
+});
+
 // 11. Xử lý tin nhắn hình ảnh
 bot.on(':photo', async (ctx) => {
   const isGroup = ctx.chat.type === 'group' || ctx.chat.type === 'supergroup';
   const botUsername = ctx.me.username;
+
+  // Tự động ghi nhận nhóm vào danh bạ (kể cả khi chưa tag bot)
+  if (isGroup) {
+    trackGroup(ctx.chat);
+  }
+
   const caption = ctx.message.caption || '';
   const isMentioned = caption.toLowerCase().includes(`@${botUsername.toLowerCase()}`);
   const isReplyToBot = ctx.message.reply_to_message?.from?.id === ctx.me.id;
@@ -333,6 +443,14 @@ bot.on(':photo', async (ctx) => {
   let memberCount = null;
   if (isGroup && typeof ctx.getChatMemberCount === 'function') {
     memberCount = await ctx.getChatMemberCount().catch(() => null);
+    if (memberCount) trackGroup(ctx.chat, memberCount);
+  }
+
+  const knownGroups = getKnownGroupsList();
+  let groupsOverview = '';
+  if (knownGroups.length > 0) {
+    const listStr = knownGroups.map(g => `"${g.title}" (ID: ${g.id}${g.memberCount ? `, ${g.memberCount} thành viên` : ''})`).join(', ');
+    groupsOverview = `\n[Danh bạ các nhóm Telegram Tiểu Cường đang túc trực: ${listStr}]`;
   }
 
   const telegramContext = {
@@ -342,6 +460,8 @@ bot.on(':photo', async (ctx) => {
     chatId: ctx.chat.id,
     memberCount: memberCount,
     sender: senderIdentity,
+    knownGroups,
+    botApi: bot.api,
     ctx
   };
 
@@ -362,8 +482,8 @@ bot.on(':photo', async (ctx) => {
     const quotePrefix = extractQuotedMessage(ctx);
 
     const spaceInfo = isGroup
-      ? `[Không gian: Nhóm Telegram "${ctx.chat.title}" (${memberCount ? `${memberCount} thành viên` : 'không rõ số thành viên'})]`
-      : `[Không gian: Trò chuyện riêng 1-1 với ${senderIdentity.title}]`;
+      ? `[Không gian: Nhóm Telegram "${ctx.chat.title}" (${memberCount ? `${memberCount} thành viên` : 'không rõ số thành viên'})]${groupsOverview}`
+      : `[Không gian: Trò chuyện riêng 1-1 với ${senderIdentity.title}]${groupsOverview}`;
     const senderTag = `[Người gửi: ${senderIdentity.title}${ctx.from.username ? ` (@${ctx.from.username})` : ''}]`;
 
     // Xây dựng prompt: TUYỆT ĐỐI KHÔNG tự tiện gán lệnh phân tích chi tiết nếu người dùng không yêu cầu!
@@ -400,6 +520,12 @@ bot.on('message:text', async (ctx) => {
 
   const isGroup = ctx.chat.type === 'group' || ctx.chat.type === 'supergroup';
   const botUsername = ctx.me.username;
+
+  // Tự động ghi nhận nhóm vào danh bạ (kể cả khi chưa tag bot)
+  if (isGroup) {
+    trackGroup(ctx.chat);
+  }
+
   const isMentioned = text.toLowerCase().includes(`@${botUsername.toLowerCase()}`);
   const isReplyToBot = ctx.message.reply_to_message?.from?.id === ctx.me.id;
 
@@ -416,6 +542,14 @@ bot.on('message:text', async (ctx) => {
   let memberCount = null;
   if (isGroup && typeof ctx.getChatMemberCount === 'function') {
     memberCount = await ctx.getChatMemberCount().catch(() => null);
+    if (memberCount) trackGroup(ctx.chat, memberCount);
+  }
+
+  const knownGroups = getKnownGroupsList();
+  let groupsOverview = '';
+  if (knownGroups.length > 0) {
+    const listStr = knownGroups.map(g => `"${g.title}" (ID: ${g.id}${g.memberCount ? `, ${g.memberCount} thành viên` : ''})`).join(', ');
+    groupsOverview = `\n[Danh bạ các nhóm Telegram Tiểu Cường đang túc trực: ${listStr}]`;
   }
 
   const telegramContext = {
@@ -425,6 +559,8 @@ bot.on('message:text', async (ctx) => {
     chatId: ctx.chat.id,
     memberCount: memberCount,
     sender: senderIdentity,
+    knownGroups,
+    botApi: bot.api,
     ctx
   };
 
@@ -499,8 +635,8 @@ bot.on('message:text', async (ctx) => {
   // Bóc tách nội dung trích dẫn (Quote Reader)
   const quotePrefix = extractQuotedMessage(ctx);
   const spaceInfo = isGroup
-    ? `[Không gian: Nhóm Telegram "${ctx.chat.title}" (${memberCount ? `${memberCount} thành viên` : 'không rõ số lượng'})]`
-    : `[Không gian: Trò chuyện riêng 1-1 với ${senderIdentity.title}]`;
+    ? `[Không gian: Nhóm Telegram "${ctx.chat.title}" (${memberCount ? `${memberCount} thành viên` : 'không rõ số lượng'})]${groupsOverview}`
+    : `[Không gian: Trò chuyện riêng 1-1 với ${senderIdentity.title}]${groupsOverview}`;
   const senderTag = `[Người gửi: ${senderIdentity.title}${ctx.from.username ? ` (@${ctx.from.username})` : ''}]`;
   const finalPromptForAI = `${quotePrefix}${spaceInfo}\n${senderTag}: ${cleanText}`;
 

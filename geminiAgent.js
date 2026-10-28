@@ -69,10 +69,15 @@ const agentToolDeclarations = [
   },
   {
     name: 'getTelegramGroupInfo',
-    description: 'Tra cứu thông tin kỹ thuật và quản trị về nhóm Telegram hiện tại (tên nhóm, số lượng thành viên, chat ID, loại nhóm, người gửi). BẮT BUỘC gọi tool này khi người dùng hỏi về số lượng thành viên trong nhóm, thông tin nhóm, hoặc kiểm tra xem đang nói chuyện ở đâu.',
+    description: 'Tra cứu thông tin kỹ thuật và quản trị về nhóm Telegram (tên nhóm, số lượng thành viên, chat ID, loại nhóm, người gửi, hoặc danh sách các nhóm bot đang tham gia). BẮT BUỘC gọi tool này khi người dùng hỏi về nhóm, số lượng thành viên, kiểm tra xem bot đang ở những nhóm nào, hoặc hỏi về một nhóm cụ thể như "group bé mỡ".',
     parameters: {
       type: Type.OBJECT,
-      properties: {},
+      properties: {
+        query: {
+          type: Type.STRING,
+          description: 'Tên nhóm hoặc từ khóa nhóm cần tra cứu (ví dụ: "bé mỡ", "gia đình"), hoặc để trống nếu muốn lấy thông tin nhóm hiện tại / tất cả các nhóm.'
+        }
+      },
       required: []
     }
   }
@@ -144,27 +149,75 @@ async function executeToolCall(toolName, args, telegramContext = null) {
 
       case 'getTelegramGroupInfo': {
         if (!telegramContext) {
-          return { status: 'failed', message: 'Không có ngữ cảnh nhóm Telegram.' };
+          return { status: 'failed', message: 'Không có ngữ cảnh Telegram.' };
         }
-        let liveCount = telegramContext.memberCount;
-        if (telegramContext.ctx && typeof telegramContext.ctx.getChatMemberCount === 'function') {
-          try {
-            liveCount = await telegramContext.ctx.getChatMemberCount();
-          } catch (e) {
-            console.warn('⚠️ Lỗi getChatMemberCount:', e.message);
+
+        const knownGroups = telegramContext.knownGroups || [];
+        const botApi = telegramContext.botApi;
+        const q = (args?.query || '').trim().toLowerCase();
+
+        // 1. Nếu đang ở trong một nhóm cụ thể và không tìm kiếm nhóm khác
+        if (telegramContext.isGroup && (!q || (telegramContext.chatTitle || '').toLowerCase().includes(q))) {
+          let liveCount = telegramContext.memberCount;
+          if (telegramContext.ctx && typeof telegramContext.ctx.getChatMemberCount === 'function') {
+            try {
+              liveCount = await telegramContext.ctx.getChatMemberCount();
+            } catch (e) {
+              console.warn('⚠️ Lỗi getChatMemberCount:', e.message);
+            }
           }
+          return {
+            status: 'success',
+            isGroup: true,
+            chatType: telegramContext.chatType || 'supergroup',
+            chatTitle: telegramContext.chatTitle || 'Nhóm hiện tại',
+            chatId: telegramContext.chatId,
+            memberCount: liveCount || 'Không rõ',
+            sender: telegramContext.sender || 'Không rõ',
+            instruction: `Nhóm "${telegramContext.chatTitle}" hiện đang có ${liveCount} thành viên. Hãy trả lời trực tiếp, rõ ràng con số này cho Ba Mỡ, tuyệt đối không thoái thác.`
+          };
         }
+
+        // 2. Tìm kiếm nhóm theo query hoặc lấy các nhóm đã biết trong danh bạ
+        if (knownGroups.length > 0) {
+          let matched = q
+            ? knownGroups.filter(g => g.title && g.title.toLowerCase().includes(q))
+            : knownGroups;
+
+          if (matched.length === 0) {
+            matched = knownGroups;
+          }
+
+          const refreshedGroups = await Promise.all(matched.map(async (g) => {
+            let count = g.memberCount;
+            if (botApi && typeof botApi.getChatMemberCount === 'function') {
+              try {
+                count = await botApi.getChatMemberCount(g.id);
+              } catch (e) {}
+            }
+            return {
+              id: g.id,
+              title: g.title,
+              type: g.type,
+              memberCount: count || g.memberCount || 'Không rõ'
+            };
+          }));
+
+          return {
+            status: 'success',
+            isGroup: telegramContext.isGroup,
+            currentChat: telegramContext.chatTitle,
+            matchedCount: refreshedGroups.length,
+            groups: refreshedGroups,
+            instruction: `Tiểu Cường đang là thành viên túc trực trong các nhóm Telegram sau: ${refreshedGroups.map(g => `"${g.title}" (${g.memberCount} thành viên)`).join(', ')}. Hãy báo cáo rõ ràng, thân mật cho Ba Mỡ biết.`
+          };
+        }
+
+        // 3. Nếu danh bạ tạm thời chưa lưu nhóm nào (chưa có tin nhắn trong nhóm kể từ lúc bot khởi động)
         return {
-          status: 'success',
-          isGroup: telegramContext.isGroup,
-          chatType: telegramContext.chatType || (telegramContext.isGroup ? 'group' : 'private'),
-          chatTitle: telegramContext.chatTitle || (telegramContext.isGroup ? 'Nhóm gia đình' : 'Chat riêng 1-1'),
-          chatId: telegramContext.chatId,
-          memberCount: liveCount || 'Chưa xác định chính xác số lượng',
-          sender: telegramContext.sender || 'Không rõ',
-          instruction: telegramContext.isGroup
-            ? `Nhóm "${telegramContext.chatTitle}" hiện đang có ${liveCount} thành viên. Hãy trả lời trực tiếp, rõ ràng con số này cho Ba Mỡ, tuyệt đối không thoái thác.`
-            : `Hiện tại đang là cuộc trò chuyện riêng 1-1 giữa Tiểu Cường và ${telegramContext.sender?.title || 'Sếp'}.`
+          status: 'empty_registry',
+          isGroup: false,
+          instruction: 'Hiện tại danh bạ của Tiểu Cường chưa lưu được ID nhóm nào (có thể do vừa khởi động lại trên Render hoặc chưa có tin nhắn nào trong nhóm). Hãy thưa với Ba Mỡ rằng Tiểu Cường luôn sẵn sàng túc trực phục vụ; nếu Ba Mỡ đã thêm em vào nhóm rồi, Ba Mỡ chỉ cần vào nhóm nhắn một tin bất kỳ hoặc tag @bot để em lập tức đồng bộ danh bạ nhóm nhé.'
         };
       }
 
