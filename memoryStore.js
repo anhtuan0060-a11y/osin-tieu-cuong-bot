@@ -123,44 +123,29 @@ function shouldRetrievePersonalMemories(userPrompt = '') {
   if (!userPrompt || typeof userPrompt !== 'string') return false;
   const low = userPrompt.toLowerCase();
   
-  // Các từ khóa kích hoạt hồ sơ riêng của Sếp Mỡ
+  // Các từ khóa kích hoạt hồ sơ riêng của Sếp Mỡ, gia đình và sổ tay dặn dò
   const personalKeywords = [
-    'bé mỡ', 'sếp mỡ', 'boss mỡ', 'con mỡ',
-    'con nhà mình', 'bé nhà mình', 'con tôi', 'con em',
-    'sữa của mỡ', 'cữ bú', 'thói quen của mỡ', 'bệnh của mỡ',
-    'sổ tay', 'dặn dò', 'lưu ý riêng', 'đổi sữa cho mỡ'
+    'bé mỡ', 'sếp mỡ', 'boss mỡ', 'con mỡ', 'bé nhà mình', 'con nhà mình', 'con tôi', 'con em', 'con bé',
+    'ba mỡ', 'mẹ mỡ', 'hữu tài', 'yến oanh', 'nguyentai_1202', 'me_bemo', 'gia đình', 'ba mẹ', 'thành viên', 'nhà mình',
+    'sữa của mỡ', 'cữ bú', 'thói quen của mỡ', 'bệnh của mỡ', 'đổi sữa cho mỡ', 'cân nặng', 'thể trạng',
+    'sổ tay', 'dặn dò', 'lưu ý riêng', 'ghi nhớ', 'nhớ', 'quên', 'đã học', 'dạy'
   ];
   
   return personalKeywords.some(kw => low.includes(kw));
 }
 
-// Bóc tách mẩu kiến thức liên quan nhất để nạp động vào lượt chat đó (Dynamic In-Context Injection)
+// Bóc tách toàn bộ mẩu kiến thức trong sổ tay riêng để nạp động vào lượt chat đó (Dynamic In-Context Injection)
 function getRelevantMemories(userPrompt = '') {
   if (!shouldRetrievePersonalMemories(userPrompt)) {
-    return ''; // CỔNG ĐÓNG 100%: Hoàn toàn không nạp sổ tay nếu câu hỏi là khách quan!
+    return ''; // CỔNG ĐÓNG 100%: Hoàn toàn không nạp sổ tay nếu câu hỏi là khách quan ngoài đời!
   }
 
   const memories = loadMemories();
   if (memories.length === 0) return '';
 
-  const low = userPrompt.toLowerCase();
-  let matched = memories.filter(m => {
-    const topic = m.topic.toLowerCase();
-    const content = m.content.toLowerCase();
-    if (low.includes('sữa') && (topic.includes('sữa') || content.includes('sữa'))) return true;
-    if ((low.includes('ngủ') || low.includes('gối') || low.includes('trào ngược')) && (topic.includes('ngủ') || topic.includes('gối') || topic.includes('trào ngược'))) return true;
-    if ((low.includes('bệnh') || low.includes('sốt') || low.includes('cấp cứu')) && (topic.includes('bệnh') || topic.includes('cấp cứu'))) return true;
-    if ((low.includes('cữ') || low.includes('ăn')) && (topic.includes('cữ') || topic.includes('sinh hoạt'))) return true;
-    return false;
-  });
-
-  if (matched.length === 0) {
-    matched = memories.slice(0, 3);
-  }
-
-  let text = '\n[THÔNG TIN HỒ SƠ BÉ MỠ (ĐƯỢC KÍCH HOẠT VÌ CÂU HỎI LIÊN QUAN ĐẾN BÉ)]:\n';
-  matched.forEach((m) => {
-    text += `• [${m.topic}]: ${m.content}\n`;
+  let text = '\n[TOÀN BỘ SỔ TAY KIẾN THỨC & HỒ SƠ GIA ĐÌNH BÉ MỠ (NẠP ĐỘNG VÌ CÂU HỎI LIÊN QUAN ĐẾN GIA ĐÌNH/BÉ/SỔ TAY)]:\n';
+  memories.forEach((m) => {
+    text += `• #${m.id} [${m.topic}]: ${m.content}\n`;
   });
   return text;
 }

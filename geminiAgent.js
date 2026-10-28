@@ -66,11 +66,20 @@ const agentToolDeclarations = [
       },
       required: ['query']
     }
+  },
+  {
+    name: 'getTelegramGroupInfo',
+    description: 'Tra cứu thông tin kỹ thuật và quản trị về nhóm Telegram hiện tại (tên nhóm, số lượng thành viên, chat ID, loại nhóm, người gửi). BẮT BUỘC gọi tool này khi người dùng hỏi về số lượng thành viên trong nhóm, thông tin nhóm, hoặc kiểm tra xem đang nói chuyện ở đâu.',
+    parameters: {
+      type: Type.OBJECT,
+      properties: {},
+      required: []
+    }
   }
 ];
 
 // Hàm thực thi các Tools
-async function executeToolCall(toolName, args) {
+async function executeToolCall(toolName, args, telegramContext = null) {
   console.log(`🛠️ [Agent ToolCall] Thực thi: ${toolName}(${JSON.stringify(args)})`);
   try {
     switch (toolName) {
@@ -122,14 +131,40 @@ async function executeToolCall(toolName, args) {
 
       case 'searchFamilyNotebook': {
         const memories = memoryStore.loadMemories();
-        const q = (args.query || '').toLowerCase();
-        const matched = memories.filter(m =>
-          m.topic.toLowerCase().includes(q) || m.content.toLowerCase().includes(q)
-        );
+        const q = (args.query || '').toLowerCase().trim();
+        const matched = q
+          ? memories.filter(m => m.topic.toLowerCase().includes(q) || m.content.toLowerCase().includes(q))
+          : memories;
         return {
           status: 'success',
-          foundCount: matched.length,
-          memories: matched.length > 0 ? matched : memories.slice(0, 5)
+          foundCount: matched.length > 0 ? matched.length : memories.length,
+          memories: matched.length > 0 ? matched : memories
+        };
+      }
+
+      case 'getTelegramGroupInfo': {
+        if (!telegramContext) {
+          return { status: 'failed', message: 'Không có ngữ cảnh nhóm Telegram.' };
+        }
+        let liveCount = telegramContext.memberCount;
+        if (telegramContext.ctx && typeof telegramContext.ctx.getChatMemberCount === 'function') {
+          try {
+            liveCount = await telegramContext.ctx.getChatMemberCount();
+          } catch (e) {
+            console.warn('⚠️ Lỗi getChatMemberCount:', e.message);
+          }
+        }
+        return {
+          status: 'success',
+          isGroup: telegramContext.isGroup,
+          chatType: telegramContext.chatType || (telegramContext.isGroup ? 'group' : 'private'),
+          chatTitle: telegramContext.chatTitle || (telegramContext.isGroup ? 'Nhóm gia đình' : 'Chat riêng 1-1'),
+          chatId: telegramContext.chatId,
+          memberCount: liveCount || 'Chưa xác định chính xác số lượng',
+          sender: telegramContext.sender || 'Không rõ',
+          instruction: telegramContext.isGroup
+            ? `Nhóm "${telegramContext.chatTitle}" hiện đang có ${liveCount} thành viên. Hãy trả lời trực tiếp, rõ ràng con số này cho Ba Mỡ, tuyệt đối không thoái thác.`
+            : `Hiện tại đang là cuộc trò chuyện riêng 1-1 giữa Tiểu Cường và ${telegramContext.sender?.title || 'Sếp'}.`
         };
       }
 
@@ -207,7 +242,7 @@ async function sendChatMessageWithRetry(targetChat, messagePayload, maxRetries =
 }
 
 // Vòng lặp Agentic AI xử lý Tool Calls tự động đến khi có câu trả lời cuối cùng
-async function askGeminiAgent(sessionKey, displayName, userPrompt, imageBase64 = null) {
+async function askGeminiAgent(sessionKey, displayName, userPrompt, imageBase64 = null, telegramContext = null) {
   const chat = getOrCreateChatSession(sessionKey, displayName);
 
   // Áp dụng Intent-Gated Dynamic Memory: Chỉ nạp sổ tay nếu câu hỏi thực sự liên quan đến bé Mỡ
@@ -259,7 +294,7 @@ async function askGeminiAgent(sessionKey, displayName, userPrompt, imageBase64 =
 
     const functionResponses = await Promise.all(
       currentResponse.functionCalls.map(async (call) => {
-        const result = await executeToolCall(call.name, call.args);
+        const result = await executeToolCall(call.name, call.args, telegramContext);
         return {
           functionResponse: {
             name: call.name,

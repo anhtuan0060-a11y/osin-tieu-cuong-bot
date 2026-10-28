@@ -18,6 +18,59 @@ function getSessionKey(ctx) {
   return isGroup ? `group_${ctx.chat.id}` : `user_${ctx.from.id}`;
 }
 
+// Nhận diện vai trò và danh xưng người gửi tin nhắn dựa trên thông tin Telegram thực tế (Single Source of Truth)
+function getSenderIdentity(ctx) {
+  const username = (ctx.from?.username || '').toLowerCase();
+  const firstName = ctx.from?.first_name || '';
+  const lastName = ctx.from?.last_name || '';
+  const fullName = `${firstName} ${lastName}`.trim();
+
+  // 1. Nhận diện chuẩn xác theo Username Telegram chính thức
+  if (username === 'nguyentai_1202') {
+    return {
+      role: 'Ba Mỡ',
+      title: 'Ba Mỡ (Sếp Nguyễn Hữu Tài)',
+      shortName: 'Ba Mỡ',
+      isBoss: true
+    };
+  }
+
+  if (username === 'me_bemo') {
+    return {
+      role: 'Mẹ Mỡ',
+      title: 'Mẹ Mỡ (Huỳnh Thị Yến Oanh)',
+      shortName: 'Mẹ Mỡ',
+      isBoss: true
+    };
+  }
+
+  // 2. Nhận diện dự phòng theo tên hiển thị
+  const lowerName = fullName.toLowerCase();
+  if (lowerName.includes('hữu tài') || lowerName.includes('huu tai') || (lowerName.includes('tài') && !lowerName.includes('ly'))) {
+    return {
+      role: 'Ba Mỡ',
+      title: `Ba Mỡ (${fullName})`,
+      shortName: 'Ba Mỡ',
+      isBoss: true
+    };
+  }
+  if (lowerName.includes('yến oanh') || lowerName.includes('yen oanh') || lowerName.includes('oanh')) {
+    return {
+      role: 'Mẹ Mỡ',
+      title: `Mẹ Mỡ (${fullName})`,
+      shortName: 'Mẹ Mỡ',
+      isBoss: true
+    };
+  }
+
+  return {
+    role: 'Thành viên',
+    title: fullName || ctx.from?.first_name || 'Khách',
+    shortName: firstName || 'Bạn',
+    isBoss: false
+  };
+}
+
 // Chia nhỏ tin nhắn nếu vượt quá 4096 ký tự của Telegram
 async function sendLongMessage(ctx, text) {
   const MAX_LENGTH = 4000;
@@ -54,6 +107,9 @@ const pendingConflicts = new Map();
 
 // Hàm xử lý dạy kiến thức mới có kiểm tra xung đột logic thông minh
 async function handleTeachKnowledge(ctx, sessionKey, userName, knowledge) {
+  const senderIdentity = getSenderIdentity(ctx);
+  const bossCall = senderIdentity.shortName || 'Ba Mỡ';
+
   let typingInterval = setInterval(() => {
     ctx.replyWithChatAction('typing').catch(() => {});
   }, 4000);
@@ -69,17 +125,18 @@ async function handleTeachKnowledge(ctx, sessionKey, userName, knowledge) {
         conflictId: check.conflictId,
         oldContent: check.oldContent,
         topic: check.suggestedTopic || 'Kiến thức Sếp dạy',
-        timestamp: Date.now()
+        timestamp: Date.now(),
+        bossCall
       });
 
-      const msg = `⚠️ **Ba Mỡ ơi, Tiểu Cường phát hiện kiến thức mới này đang XUNG ĐỘT với điều em đã nhớ trước đây:**\n\n` +
+      const msg = `⚠️ **${bossCall} ơi, Tiểu Cường phát hiện kiến thức mới này đang XUNG ĐỘT với điều em đã nhớ trước đây:**\n\n` +
                   `📌 **Điều cũ (#${check.conflictId}):** "${check.oldContent}"\n\n` +
-                  `🆕 **Điều mới Ba vừa dặn:** "${knowledge}"\n` +
+                  `🆕 **Điều mới ${bossCall} vừa dặn:** "${knowledge}"\n` +
                   `❓ **Lý do xung đột:** ${check.reason || 'Có sự mâu thuẫn trực tiếp giữa kiến thức mới và cũ'}\n\n` +
-                  `Ba có muốn em **THAY THẾ** điều cũ bằng điều mới này không ạ?\n\n` +
+                  `${bossCall} có muốn em **THAY THẾ** điều cũ bằng điều mới này không ạ?\n\n` +
                   `👉 Nhắn **"Thay thế"** (hoặc /thaythe) để cập nhật mới.\n` +
                   `👉 Nhắn **"Giữ cả hai"** (hoặc /giucahai) nếu muốn lưu thêm song song.\n` +
-                  `👉 Nhắn **"Hủy"** (hoặc /huy) nếu Ba dặn nhầm nhé!`;
+                  `👉 Nhắn **"Hủy"** (hoặc /huy) nếu ${bossCall} dặn nhầm nhé!`;
 
       return await ctx.reply(msg, { parse_mode: 'Markdown' });
     }
@@ -95,7 +152,7 @@ async function handleTeachKnowledge(ctx, sessionKey, userName, knowledge) {
     return await ctx.reply(
       `🧠 **Dạ, Tiểu Cường đã ghi nhớ vĩnh viễn điều này vào sổ tay rồi ạ!**\n\n` +
       `📌 **Mục #${added.id} [${added.topic}]:** "${added.content}"\n\n` +
-      `Em đã đối chiếu kiểm tra không thấy xung đột với các điều cũ. Em đã khắc sâu vào tiềm thức rồi nha Ba Mỡ! 🥰`,
+      `Em đã đối chiếu kiểm tra không thấy xung đột với các điều cũ. Em đã khắc sâu vào tiềm thức rồi nha ${bossCall}! 🥰`,
       { parse_mode: 'Markdown' }
     );
   } catch (err) {
@@ -115,10 +172,10 @@ async function handleTeachKnowledge(ctx, sessionKey, userName, knowledge) {
 // 1. Lệnh /start
 bot.command('start', async (ctx) => {
   const sessionKey = getSessionKey(ctx);
-  const userName = ctx.from.first_name || 'Sếp';
-  getOrCreateChatSession(sessionKey, userName);
+  const senderIdentity = getSenderIdentity(ctx);
+  getOrCreateChatSession(sessionKey, senderIdentity.title);
 
-  const welcomeMessage = `👋 **Dạ, Osin Tiểu Cường xin kính chào Sếp ${userName}!** 🙇‍♂️
+  const welcomeMessage = `👋 **Dạ, Osin Tiểu Cường xin kính chào ${senderIdentity.title}!** 🙇‍♂️
 
 Em là trợ lý ảo AI cao cấp chạy bằng công nghệ **Google Gemini Agent**, đã được nâng cấp kiến trúc **TÁC NHÂN TỰ CHỦ (NATIVE FUNCTION CALLING)** & **BỘ NHỚ THÔNG MINH BỀN VỮNG**!
 
@@ -270,8 +327,23 @@ bot.on(':photo', async (ctx) => {
   }
 
   const sessionKey = getSessionKey(ctx);
-  const userName = ctx.from.first_name || 'Sếp';
+  const senderIdentity = getSenderIdentity(ctx);
   const cleanCaption = caption.replace(new RegExp(`@${botUsername}`, 'gi'), '').trim();
+
+  let memberCount = null;
+  if (isGroup && typeof ctx.getChatMemberCount === 'function') {
+    memberCount = await ctx.getChatMemberCount().catch(() => null);
+  }
+
+  const telegramContext = {
+    isGroup,
+    chatType: ctx.chat.type,
+    chatTitle: ctx.chat.title || 'Chat riêng 1-1',
+    chatId: ctx.chat.id,
+    memberCount: memberCount,
+    sender: senderIdentity,
+    ctx
+  };
 
   let typingInterval = setInterval(() => {
     ctx.replyWithChatAction('typing').catch(() => {});
@@ -286,22 +358,25 @@ bot.on(':photo', async (ctx) => {
     const buffer = await response.buffer();
     const base64Data = buffer.toString('base64');
 
-    const displayName = isGroup ? `Gia đình Sếp Mỡ (${ctx.chat.title || 'Nhóm'})` : userName;
+    const displayName = isGroup ? `Gia đình Sếp Mỡ (${ctx.chat.title || 'Nhóm'})` : senderIdentity.title;
     const quotePrefix = extractQuotedMessage(ctx);
+
+    const spaceInfo = isGroup
+      ? `[Không gian: Nhóm Telegram "${ctx.chat.title}" (${memberCount ? `${memberCount} thành viên` : 'không rõ số thành viên'})]`
+      : `[Không gian: Trò chuyện riêng 1-1 với ${senderIdentity.title}]`;
+    const senderTag = `[Người gửi: ${senderIdentity.title}${ctx.from.username ? ` (@${ctx.from.username})` : ''}]`;
 
     // Xây dựng prompt: TUYỆT ĐỐI KHÔNG tự tiện gán lệnh phân tích chi tiết nếu người dùng không yêu cầu!
     let senderPrompt;
     if (cleanCaption) {
-      senderPrompt = isGroup ? `[${userName} gửi 1 ảnh kèm yêu cầu]: ${cleanCaption}` : cleanCaption;
+      senderPrompt = `${spaceInfo}\n${senderTag}: Gửi 1 ảnh kèm yêu cầu: ${cleanCaption}`;
     } else {
-      senderPrompt = isGroup
-        ? `[${userName} vừa gửi 1 bức ảnh (KHÔNG CÓ YÊU CẦU PHÂN TÍCH CHI TIẾT)]`
-        : `[Người dùng vừa gửi 1 bức ảnh (KHÔNG CÓ YÊU CẦU PHÂN TÍCH CHI TIẾT)]`;
+      senderPrompt = `${spaceInfo}\n${senderTag}: Vừa gửi 1 bức ảnh (KHÔNG CÓ YÊU CẦU PHÂN TÍCH CHI TIẾT)`;
     }
 
     const finalPhotoPrompt = `${quotePrefix}${senderPrompt}`;
 
-    const replyText = await askGeminiAgent(sessionKey, displayName, finalPhotoPrompt, base64Data);
+    const replyText = await askGeminiAgent(sessionKey, displayName, finalPhotoPrompt, base64Data, telegramContext);
 
     clearInterval(typingInterval);
 
@@ -314,7 +389,7 @@ bot.on(':photo', async (ctx) => {
   } catch (err) {
     clearInterval(typingInterval);
     console.error('❌ Lỗi xử lý hình ảnh:', err.message);
-    await ctx.reply('Dạ Ba Mỡ ơi, em gặp chút trục trặc khi tải ảnh từ máy chủ Telegram rồi ạ, Ba Mỡ gửi lại giúp em nhé! 🙇‍♂️');
+    await ctx.reply(`Dạ ${senderIdentity.shortName || 'Ba Mỡ'} ơi, em gặp chút trục trặc khi tải ảnh từ máy chủ Telegram rồi ạ, gửi lại giúp em nhé! 🙇‍♂️`);
   }
 });
 
@@ -336,14 +411,30 @@ bot.on('message:text', async (ctx) => {
   if (!cleanText) return;
 
   const sessionKey = getSessionKey(ctx);
-  const userName = ctx.from.first_name || 'Sếp';
+  const senderIdentity = getSenderIdentity(ctx);
 
-  console.log(`📩 [${new Date().toLocaleTimeString('vi-VN')}] Nhận tin từ ${userName} (${isGroup ? `Nhóm ${ctx.chat.id}` : 'Chat riêng'}): "${cleanText}"`);
+  let memberCount = null;
+  if (isGroup && typeof ctx.getChatMemberCount === 'function') {
+    memberCount = await ctx.getChatMemberCount().catch(() => null);
+  }
+
+  const telegramContext = {
+    isGroup,
+    chatType: ctx.chat.type,
+    chatTitle: ctx.chat.title || 'Chat riêng 1-1',
+    chatId: ctx.chat.id,
+    memberCount: memberCount,
+    sender: senderIdentity,
+    ctx
+  };
+
+  console.log(`📩 [${new Date().toLocaleTimeString('vi-VN')}] Nhận tin từ ${senderIdentity.title} (${isGroup ? `Nhóm ${ctx.chat.title} [${memberCount} members]` : 'Chat riêng'}): "${cleanText}"`);
 
   // Xử lý xác nhận xung đột bộ nhớ
   if (pendingConflicts.has(sessionKey)) {
     const pending = pendingConflicts.get(sessionKey);
     const low = cleanText.toLowerCase();
+    const bossCall = pending.bossCall || senderIdentity.shortName || 'Ba Mỡ';
 
     if (low === 'thay thế' || low === 'thay the' || low === 'đồng ý thay thế' || low === 'dong y thay the') {
       const updated = memoryStore.updateMemory(pending.conflictId, pending.newKnowledge, pending.topic);
@@ -352,7 +443,7 @@ bot.on('message:text', async (ctx) => {
       return await ctx.reply(
         `✅ **Dạ, Tiểu Cường đã THAY THẾ thành công mục #${pending.conflictId}!**\n\n` +
         `📌 **Nội dung mới:** "${updated.content}"\n\n` +
-        `Sổ tay đã được làm mới chuẩn xác theo lệnh của Ba Mỡ rồi ạ! 🙇‍♂️`,
+        `Sổ tay đã được làm mới chuẩn xác theo lệnh của ${bossCall} rồi ạ! 🙇‍♂️`,
         { parse_mode: 'Markdown' }
       );
     }
@@ -389,7 +480,7 @@ bot.on('message:text', async (ctx) => {
     const match = cleanText.match(pattern);
     if (match && match[1]) {
       const knowledge = match[1].trim();
-      return await handleTeachKnowledge(ctx, sessionKey, userName, knowledge);
+      return await handleTeachKnowledge(ctx, sessionKey, senderIdentity.title, knowledge);
     }
   }
 
@@ -407,8 +498,11 @@ bot.on('message:text', async (ctx) => {
 
   // Bóc tách nội dung trích dẫn (Quote Reader)
   const quotePrefix = extractQuotedMessage(ctx);
-  const senderPrefix = isGroup ? `[${userName}]: ` : '';
-  const finalPromptForAI = `${quotePrefix}${senderPrefix}${cleanText}`;
+  const spaceInfo = isGroup
+    ? `[Không gian: Nhóm Telegram "${ctx.chat.title}" (${memberCount ? `${memberCount} thành viên` : 'không rõ số lượng'})]`
+    : `[Không gian: Trò chuyện riêng 1-1 với ${senderIdentity.title}]`;
+  const senderTag = `[Người gửi: ${senderIdentity.title}${ctx.from.username ? ` (@${ctx.from.username})` : ''}]`;
+  const finalPromptForAI = `${quotePrefix}${spaceInfo}\n${senderTag}: ${cleanText}`;
 
   let typingInterval = setInterval(() => {
     ctx.replyWithChatAction('typing').catch(() => {});
@@ -417,9 +511,9 @@ bot.on('message:text', async (ctx) => {
 
   try {
     console.log(`🤖 [Agent Dispatch] Đang gửi câu hỏi cho Gemini Agent (Phiên: ${sessionKey})...`);
-    const displayName = isGroup ? `Gia đình Sếp Mỡ (${ctx.chat.title || 'Nhóm'})` : userName;
+    const displayName = isGroup ? `Gia đình Sếp Mỡ (${ctx.chat.title || 'Nhóm'})` : senderIdentity.title;
 
-    const baseReply = await askGeminiAgent(sessionKey, displayName, finalPromptForAI);
+    const baseReply = await askGeminiAgent(sessionKey, displayName, finalPromptForAI, null, telegramContext);
     clearInterval(typingInterval);
 
     const replyText = `${baseReply}${autoLearnedNote}`;
