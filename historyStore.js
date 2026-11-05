@@ -222,6 +222,31 @@ function appendChatTurn(sessionKey, role, text) {
   }
 }
 
+// Lấy câu hỏi người dùng gần nhất trong lịch sử (để phục vụ xử lý tham chiếu ngược "trả lời lại")
+function getLastUserQuestion(sessionKey) {
+  try {
+    const all = loadAllHistories();
+    const sessionData = getSessionData(all, sessionKey);
+    const msgs = sessionData.messages || [];
+    for (let i = msgs.length - 1; i >= 0; i--) {
+      if (msgs[i].role === 'user' && msgs[i].text) {
+        const text = msgs[i].text;
+        // Bóc tách nội dung thực sự sau thẻ [Người gửi: ...] nếu có
+        const match = text.match(/(?:\[Người gửi:.*?\]:\s*)([\s\S]+)$/);
+        const cleanQ = (match ? match[1] : text).trim();
+        // Bỏ qua nếu chính tin nhắn cũ là câu lệnh "trả lời lại" hoặc quá ngắn
+        if (!/^(trả lời lại|nói lại|lại đi|câu trên)$/i.test(cleanQ) && cleanQ.length > 2) {
+          return cleanQ;
+        }
+      }
+    }
+    return null;
+  } catch (err) {
+    console.warn('⚠️ Lỗi getLastUserQuestion:', err.message);
+    return null;
+  }
+}
+
 // Xóa lịch sử khi người dùng gọi lệnh /reset
 function clearSessionHistory(sessionKey) {
   const all = loadAllHistories();
@@ -236,5 +261,6 @@ module.exports = {
   appendChatTurn,
   clearSessionHistory,
   setOnCompressionComplete,
-  compressContextInBackground
+  compressContextInBackground,
+  getLastUserQuestion
 };

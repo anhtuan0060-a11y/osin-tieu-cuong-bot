@@ -638,7 +638,18 @@ bot.on('message:text', async (ctx) => {
     ? `[Không gian: Nhóm Telegram "${ctx.chat.title}" (${memberCount ? `${memberCount} thành viên` : 'không rõ số lượng'})]${groupsOverview}`
     : `[Không gian: Trò chuyện riêng 1-1 với ${senderIdentity.title}]${groupsOverview}`;
   const senderTag = `[Người gửi: ${senderIdentity.title}${ctx.from.username ? ` (@${ctx.from.username})` : ''}]`;
-  const finalPromptForAI = `${quotePrefix}${spaceInfo}\n${senderTag}: ${cleanText}`;
+
+  // Tự động nhận diện lệnh yêu cầu trả lời lại / nối tiếp ý câu trước
+  const isReAnswerRequest = /(trả lời lại|nói lại|trả lời câu trên|sao không trả lời|chưa trả lời|trả lời câu trước|lại đi)/i.test(cleanText);
+  let reAnswerInstruction = '';
+  if (isReAnswerRequest) {
+    const lastQuestion = historyStore.getLastUserQuestion(sessionKey);
+    if (lastQuestion) {
+      reAnswerInstruction = `\n[CHỈ THỊ ĐẶC BIỆT TỪ HỆ THỐNG]: Người dùng đang yêu cầu trả lời lại câu hỏi trước đó trong lịch sử hội thoại.\n[NỘI DUNG CÂU HỎI TRƯỚC ĐÓ CẦN TRẢ LỜI NGAY]: "${lastQuestion}"\n[LỜI NHẮN CỦA NGƯỜI DÙNG]: "${cleanText}"\n👉 YÊU CẦU BẮT BUỘC: Hãy đi thẳng vào việc trả lời chi tiết, thấu đáo và chuẩn xác câu hỏi trước đó ngay lập tức, tuyệt đối CẤM hỏi lại Ba Mỡ!\n`;
+    }
+  }
+
+  const finalPromptForAI = `${quotePrefix}${spaceInfo}${reAnswerInstruction}\n${senderTag}: ${cleanText}`;
 
   let typingInterval = setInterval(() => {
     ctx.replyWithChatAction('typing').catch(() => {});

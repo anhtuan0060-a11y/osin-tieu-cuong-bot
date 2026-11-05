@@ -68,6 +68,24 @@ const agentToolDeclarations = [
     }
   },
   {
+    name: 'saveToNotebook',
+    description: 'Lưu vĩnh viễn một kiến thức, dặn dò, thói quen riêng, hoặc mốc thông tin mới của gia đình Sếp Mỡ vào Sổ tay vĩnh viễn (memory.json). BẮT BUỘC gọi tool này khi: (1) Ba Mẹ dặn dò điều gì cần ghi nhớ; (2) Ba Mẹ dạy kiến thức mới; (3) Ba Mẹ yêu cầu sửa/cập nhật thông tin; (4) Ba Mẹ bảo "nhớ nhé", "ghi nhớ", "học đi", "từ giờ nhớ là...".',
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        content: {
+          type: Type.STRING,
+          description: 'Nội dung kiến thức, thói quen hoặc thông tin cần lưu vĩnh viễn'
+        },
+        topic: {
+          type: Type.STRING,
+          description: 'Chủ đề của kiến thức (ví dụ: "Dinh dưỡng & Sữa", "Giấc ngủ & Sinh hoạt", "Thói quen riêng", "Sức khỏe & Y tế", "Hồ sơ gia đình", "Kiến thức Sếp dạy")'
+        }
+      },
+      required: ['content']
+    }
+  },
+  {
     name: 'getTelegramGroupInfo',
     description: 'Tra cứu thông tin kỹ thuật và quản trị về nhóm Telegram (tên nhóm, số lượng thành viên, chat ID, loại nhóm, người gửi, hoặc danh sách các nhóm bot đang tham gia). BẮT BUỘC gọi tool này khi người dùng hỏi về nhóm, số lượng thành viên, kiểm tra xem bot đang ở những nhóm nào, hoặc hỏi về một nhóm cụ thể như "group bé mỡ".',
     parameters: {
@@ -144,6 +162,24 @@ async function executeToolCall(toolName, args, telegramContext = null) {
           status: 'success',
           foundCount: matched.length > 0 ? matched.length : memories.length,
           memories: matched.length > 0 ? matched : memories
+        };
+      }
+
+      case 'saveToNotebook': {
+        const content = (args.content || '').trim();
+        if (!content) {
+          return { status: 'failed', message: 'Nội dung ghi nhớ không được để trống.' };
+        }
+        const topic = args.topic || 'Kiến thức Sếp dạy';
+        const added = memoryStore.addMemory(content, topic);
+        resetAllChatSessions();
+        console.log(`🧠 [Agent Tool: saveToNotebook] Đã tự động lưu mục #${added.id} [${added.topic}]: "${added.content}"`);
+        return {
+          status: 'success',
+          id: added.id,
+          topic: added.topic,
+          content: added.content,
+          message: `Đã ghi nhớ vĩnh viễn vào sổ tay mục #${added.id} [${added.topic}]. Toàn bộ các phiên chat nhóm và riêng sẽ lập tức áp dụng kiến thức này.`
         };
       }
 

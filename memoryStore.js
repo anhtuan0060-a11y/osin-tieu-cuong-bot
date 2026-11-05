@@ -118,6 +118,58 @@ TRẢ VỀ KẾT QUẢ DUY NHẤT LÀ 1 ĐOẠN JSON (không thêm markdown ho�
   }
 }
 
+// Tính toán thông tin tuổi và tuần phát triển chuẩn y khoa của Sếp Mỡ theo thời gian thực
+function getBabyCurrentAgeProfile() {
+  const birthDate = new Date(2026, 6, 13); // 13/07/2026 (tháng 0-indexed: 6 = tháng 7)
+  const now = new Date();
+  
+  const diffTime = Math.max(0, now.getTime() - birthDate.getTime());
+  const totalDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+  const totalWeeks = Math.floor(totalDays / 7);
+  const remainingDays = totalDays % 7;
+  
+  // Tính số tháng xấp xỉ
+  let months = (now.getFullYear() - birthDate.getFullYear()) * 12 + (now.getMonth() - birthDate.getMonth());
+  if (now.getDate() < birthDate.getDate()) {
+    months = Math.max(0, months - 1);
+  }
+
+  // Xác định giai đoạn Wonder Week (tuần khủng hoảng phát triển trí não)
+  let wonderWeekInfo = '';
+  if (totalWeeks < 4) {
+    wonderWeekInfo = 'Giai đoạn sơ sinh làm quen với môi trường bên ngoài.';
+  } else if (totalWeeks >= 4 && totalWeeks <= 6) {
+    wonderWeekInfo = 'Wonder Week 5 (Tuần 4 - 5): Bước nhảy vọt 1 - Thế giới của các cảm giác biến đổi.';
+  } else if (totalWeeks >= 7 && totalWeeks <= 10) {
+    wonderWeekInfo = 'Wonder Week 8 (Tuần 7 - 9): Bước nhảy vọt 2 - Thế giới của các mẫu hình & tri giác.';
+  } else if (totalWeeks >= 11 && totalWeeks <= 14) {
+    wonderWeekInfo = 'Wonder Week 12 (Tuần 11 - 13): Bước nhảy vọt 3 - Thế giới của những chuyển tiếp êm ái.';
+  } else if (totalWeeks >= 15 && totalWeeks <= 20) {
+    wonderWeekInfo = 'Wonder Week 19 (Tuần 15 - 19): Bước nhảy vọt 4 - Thế giới của các chuỗi sự kiện, lẫy thành thạo, hóng chuyện, hiểu khoảng cách.';
+  } else if (totalWeeks >= 21 && totalWeeks <= 27) {
+    wonderWeekInfo = 'Wonder Week 26 (Tuần 22 - 26): Bước nhảy vọt 5 - Thế giới của các mối quan hệ & lo âu xa cách.';
+  } else if (totalWeeks >= 28 && totalWeeks <= 38) {
+    wonderWeekInfo = 'Wonder Week 37 (Tuần 33 - 37): Bước nhảy vọt 6 - Thế giới của sự phân loại & khám phá.';
+  } else if (totalWeeks >= 39 && totalWeeks <= 47) {
+    wonderWeekInfo = 'Wonder Week 46 (Tuần 41 - 46): Bước nhảy vọt 7 - Thế giới của các trình tự & chuỗi hành động.';
+  } else {
+    wonderWeekInfo = `Wonder Week tương ứng mốc ${totalWeeks} tuần tuổi.`;
+  }
+
+  const todayStr = `${now.getDate().toString().padStart(2, '0')}/${(now.getMonth() + 1).toString().padStart(2, '0')}/${now.getFullYear()}`;
+
+  return {
+    todayStr,
+    birthDateStr: '13/07/2026',
+    totalDays,
+    totalWeeks,
+    remainingDays,
+    monthsApprox: months,
+    wonderWeekInfo,
+    summaryText: `Hôm nay là ngày ${todayStr}. Sếp Mỡ sinh ngày 13/07/2026 ➔ Hiện tại chính xác là ${totalDays} ngày tuổi (${totalWeeks} tuần ${remainingDays} ngày, khoảng ${months} tháng tuổi). Giai đoạn phát triển: ${wonderWeekInfo}`
+  };
+}
+
 // Kiểm tra câu hỏi của người dùng có thực sự cần đến Sổ tay riêng của bé Mỡ không (Intent Gate)
 function shouldRetrievePersonalMemories(userPrompt = '') {
   if (!userPrompt || typeof userPrompt !== 'string') return false;
@@ -128,7 +180,9 @@ function shouldRetrievePersonalMemories(userPrompt = '') {
     'bé mỡ', 'sếp mỡ', 'boss mỡ', 'con mỡ', 'bé nhà mình', 'con nhà mình', 'con tôi', 'con em', 'con bé',
     'ba mỡ', 'mẹ mỡ', 'hữu tài', 'yến oanh', 'nguyentai_1202', 'me_bemo', 'gia đình', 'ba mẹ', 'thành viên', 'nhà mình',
     'sữa của mỡ', 'cữ bú', 'thói quen của mỡ', 'bệnh của mỡ', 'đổi sữa cho mỡ', 'cân nặng', 'thể trạng',
-    'sổ tay', 'dặn dò', 'lưu ý riêng', 'ghi nhớ', 'nhớ', 'quên', 'đã học', 'dạy'
+    'sổ tay', 'dặn dò', 'lưu ý riêng', 'lưu ý', 'ghi nhớ', 'nhớ', 'quên', 'đã học', 'dạy',
+    'sếp', 'boss', 'mốc', 'tuần', 'tháng', 'tuổi', 'giai đoạn', 'wonder week', 'ww', 'ngày sinh', 'sinh ngày', 'sinh nhật', 'lịch',
+    'trả lời lại', 'nói lại', 'câu trên', 'câu vừa rồi', 'lại đi'
   ];
   
   return personalKeywords.some(kw => low.includes(kw));
@@ -141,9 +195,10 @@ function getRelevantMemories(userPrompt = '') {
   }
 
   const memories = loadMemories();
-  if (memories.length === 0) return '';
+  const ageProfile = getBabyCurrentAgeProfile();
 
-  let text = '\n[TOÀN BỘ SỔ TAY KIẾN THỨC & HỒ SƠ GIA ĐÌNH BÉ MỠ (NẠP ĐỘNG VÌ CÂU HỎI LIÊN QUAN ĐẾN GIA ĐÌNH/BÉ/SỔ TAY)]:\n';
+  let text = `\n[THÔNG TIN THỜI GIAN THỰC & HỒ SƠ SẾP MỠ (CẬP NHẬT TỰ ĐỘNG CHUẨN XÁC)]:\n• ${ageProfile.summaryText}\n\n`;
+  text += '[TOÀN BỘ SỔ TAY KIẾN THỨC & DẶN DÒ GIA ĐÌNH BÉ MỠ]:\n';
   memories.forEach((m) => {
     text += `• #${m.id} [${m.topic}]: ${m.content}\n`;
   });
@@ -204,6 +259,7 @@ module.exports = {
   shouldRetrievePersonalMemories,
   getRelevantMemories,
   getBehavioralRules,
+  getBabyCurrentAgeProfile,
   formatMemoriesForPrompt,
   formatMemoriesForUser
 };
